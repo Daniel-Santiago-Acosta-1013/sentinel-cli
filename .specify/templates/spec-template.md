@@ -18,6 +18,10 @@
   - Tested independently
   - Deployed independently
   - Demonstrated to users independently
+
+  If the feature affects CLI behavior or system operations, each story should
+  describe the expected terminal experience and any safety or recovery outcome
+  visible to the user.
 -->
 
 ### User Story 1 - [Brief Title] (Priority: P1)
@@ -68,8 +72,9 @@
 ### Edge Cases
 
 <!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right edge cases.
+  ACTION REQUIRED: Replace these placeholders with real edge cases.
+  Include interruption, invalid state, pre-existing configuration, and recovery
+  scenarios when the feature can affect system behavior or user safety.
 -->
 
 - What happens when [boundary condition]?
@@ -78,8 +83,10 @@
 ## Requirements *(mandatory)*
 
 <!--
-  ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right functional requirements.
+  ACTION REQUIRED: Replace the placeholders with testable requirements.
+  Cover user-visible behavior, scope boundaries, and safety expectations.
+  Avoid implementation details such as languages, frameworks, APIs, or internal
+  architecture choices.
 -->
 
 ### Functional Requirements
@@ -99,6 +106,15 @@
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
+
+## Assumptions & Scope Boundaries *(optional)*
+
+<!--
+  Include when you are making reasonable defaults, deferring non-essential
+  scope, or documenting operational limits that matter for planning.
+-->
+
+- [Assumption or explicit scope boundary]
 
 ## Success Criteria *(mandatory)*
 

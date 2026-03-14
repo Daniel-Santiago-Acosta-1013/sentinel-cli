@@ -31,7 +31,16 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- Command surface remains minimal and every new command or flag is justified by
+  direct user value.
+- CLI output, help text, and error handling are designed for clean, intuitive
+  terminal use.
+- Network-affecting flows include safety checks, rollback behavior, and
+  recoverability.
+- Proposed structure preserves small module boundaries and essential
+  maintainer-facing documentation.
+- Non-essential features, abstractions, and polish work outside the core user
+  journey are explicitly deferred.
 
 ## Project Structure
 
