@@ -1,3 +1,3 @@
-pub mod coordinator;
+pub mod activation;
 pub mod recovery;
-pub mod snapshot;
+pub mod safety;

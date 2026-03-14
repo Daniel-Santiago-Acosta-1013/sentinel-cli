@@ -1,74 +1,71 @@
 use std::{
     env,
+    io::{self, stdout},
     net::SocketAddr,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
-    str::FromStr,
+    process::Command,
     time::Duration,
 };
 
+use crossterm::{
+    cursor,
+    event::{self, Event},
+    execute,
+    terminal::{
+        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    },
+};
 use directories::ProjectDirs;
 use miette::{Context, IntoDiagnostic, Result, miette};
-use serde_json::{Value, json};
-use thiserror::Error;
-use tokio::time::sleep;
+use ratatui::{Terminal, backend::CrosstermBackend};
 use tracing_subscriber::EnvFilter;
 
 use crate::{
-    cli::{
-        GlobalOptions, Parser,
-        commands::{AllowCommand, Cli, Commands, RulesCommand},
-        output::{render_events, render_rules, render_status},
+    blocking::{blocklist::BlocklistBundle, runtime},
+    control::{
+        activation::ActivationController, recovery::RecoveryController,
+        safety::SafetyController,
     },
-    control::{coordinator::Coordinator, recovery::RecoveryManager},
-    core::{
-        events::{OperationEvent, OperationEventKind, Severity},
-        rules::built_in_rules,
+    install::version,
+    storage::{
+        config::ConfigStore, events::EventStore, install::InstallStore,
         state::ProtectionMode,
     },
-    engine::runtime::run_runtime,
-    storage::{config::ConfigStore, events::EventStore, state::StateStore},
+    tui::{
+        app_state::{ActionId, ConfirmationAction, InteractiveSession, Screen},
+        input::{InputEvent, parse_script, translate_key},
+        screens,
+    },
 };
 
 pub type AppResult<T> = Result<T>;
 
-#[derive(Debug, Error)]
-pub enum AppError {
-    #[error("command requires elevated privileges")]
-    PermissionDenied,
-    #[error("background runtime failed to start")]
-    RuntimeStartFailed,
-    #[error("invalid domain value: {0}")]
-    InvalidDomain(String),
-}
-
-/// Runtime paths and files used by the CLI and background runtime.
 #[derive(Debug, Clone)]
 pub struct AppPaths {
     pub state_dir: PathBuf,
+    pub snapshots_dir: PathBuf,
     pub config_file: PathBuf,
     pub state_file: PathBuf,
     pub events_file: PathBuf,
-    pub snapshots_dir: PathBuf,
+    pub install_file: PathBuf,
 }
 
 impl AppPaths {
     pub fn discover() -> AppResult<Self> {
-        let root = if let Ok(custom_root) = env::var("SENTINEL_HOME") {
+        let root_dir = if let Ok(custom_root) = env::var("SENTINEL_HOME") {
             PathBuf::from(custom_root)
         } else {
-            let project_dirs = ProjectDirs::from("com", "Sentinel", "sentinel-cli")
+            let project_dirs = ProjectDirs::from("com", "sentinel", "sentinel")
                 .ok_or_else(|| {
                     miette!("unable to determine application support directory")
                 })?;
             project_dirs.data_dir().to_path_buf()
         };
 
-        let config_dir = root.join("config");
-        let data_dir = root.join("data");
-        let state_dir = root.join("state");
+        let config_dir = root_dir.join("config");
+        let data_dir = root_dir.join("data");
+        let state_dir = root_dir.join("state");
         let snapshots_dir = state_dir.join("snapshots");
-
         std::fs::create_dir_all(&config_dir).into_diagnostic()?;
         std::fs::create_dir_all(&data_dir).into_diagnostic()?;
         std::fs::create_dir_all(&state_dir).into_diagnostic()?;
@@ -76,10 +73,11 @@ impl AppPaths {
 
         Ok(Self {
             state_dir: state_dir.clone(),
+            snapshots_dir,
             config_file: config_dir.join("config.toml"),
             state_file: state_dir.join("state.json"),
             events_file: state_dir.join("events.jsonl"),
-            snapshots_dir,
+            install_file: data_dir.join("install.json"),
         })
     }
 
@@ -88,31 +86,23 @@ impl AppPaths {
             .ok()
             .and_then(|value| value.parse::<u16>().ok())
             .unwrap_or(53);
-        SocketAddr::from_str(&format!("127.0.0.1:{port}")).into_diagnostic()
+        let bind_ip =
+            env::var("SENTINEL_DNS_BIND").unwrap_or_else(|_| "127.0.0.1".to_owned());
+        format!("{bind_ip}:{port}").parse().into_diagnostic()
     }
 }
 
 pub async fn run() -> AppResult<()> {
     init_tracing()?;
-
-    let cli = Cli::parse();
     let paths = AppPaths::discover()?;
-    let app = Application::new(paths, cli.global)?;
 
-    match cli.command {
-        Commands::Enable => app.enable().await,
-        Commands::Disable => app.disable().await,
-        Commands::Status => app.status().await,
-        Commands::Allow { command } => match command {
-            AllowCommand::Add { domain } => app.allow_add(&domain).await,
-            AllowCommand::Remove { domain } => app.allow_remove(&domain).await,
-        },
-        Commands::Rules { command } => match command {
-            RulesCommand::List => app.rules_list().await,
-        },
-        Commands::Recover => app.recover().await,
-        Commands::Events { limit } => app.events(limit).await,
-        Commands::Serve => run_runtime(app.paths.clone()).await,
+    match env::var("SENTINEL_INTERNAL_MODE").ok().as_deref() {
+        Some("runtime") => runtime::run_runtime(paths).await,
+        Some("print-version") => {
+            println!("{}", version::current_version());
+            Ok(())
+        }
+        _ => SentinelApp::new(paths)?.run().await,
     }
 }
 
@@ -136,6 +126,306 @@ fn init_tracing() -> AppResult<()> {
         })
 }
 
+pub fn read_file_if_exists(path: &Path) -> AppResult<Option<String>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    std::fs::read_to_string(path).into_diagnostic().map(Some)
+}
+
+pub struct SentinelApp {
+    paths: AppPaths,
+    blocklist: BlocklistBundle,
+    config_store: ConfigStore,
+    state_store: crate::storage::state::StateStore,
+    event_store: EventStore,
+    install_store: InstallStore,
+}
+
+impl SentinelApp {
+    pub fn new(paths: AppPaths) -> AppResult<Self> {
+        let blocklist = BlocklistBundle::load()?;
+        Ok(Self {
+            config_store: ConfigStore::new(paths.clone()),
+            state_store: crate::storage::state::StateStore::new(paths.clone()),
+            event_store: EventStore::new(paths.clone()),
+            install_store: InstallStore::new(paths.clone()),
+            paths,
+            blocklist,
+        })
+    }
+
+    async fn run(self) -> AppResult<()> {
+        if let Ok(script) = env::var("SENTINEL_SCRIPT") {
+            return self.run_scripted(script).await;
+        }
+
+        if !std::io::IsTerminal::is_terminal(&io::stdout()) {
+            return Err(miette!(
+                "Sentinel requires an interactive terminal. Re-run it in a TTY."
+            ));
+        }
+
+        self.run_terminal().await
+    }
+
+    async fn run_scripted(self, script: String) -> AppResult<()> {
+        let mut session = self.load_session()?;
+        let mut transcript = vec![screens::render_snapshot(&session)];
+        for event in parse_script(&script)? {
+            if self.handle_input(&mut session, event).await? {
+                transcript.push(screens::render_snapshot(&session));
+                break;
+            }
+            transcript.push(screens::render_snapshot(&session));
+        }
+
+        println!("{}", transcript.join("\n\n---\n\n"));
+        Ok(())
+    }
+
+    async fn run_terminal(self) -> AppResult<()> {
+        enable_raw_mode().into_diagnostic()?;
+        let mut out = stdout();
+        execute!(out, EnterAlternateScreen, cursor::Hide).into_diagnostic()?;
+
+        let backend = CrosstermBackend::new(out);
+        let mut terminal = Terminal::new(backend).into_diagnostic()?;
+        let mut session = self.load_session()?;
+
+        let result = async {
+            loop {
+                terminal
+                    .draw(|frame| screens::draw(frame, &session))
+                    .into_diagnostic()?;
+
+                if event::poll(Duration::from_millis(250)).into_diagnostic()? {
+                    let event = event::read().into_diagnostic()?;
+                    if let Event::Key(key) = event
+                        && let Some(input) = translate_key(key)
+                        && self.handle_input(&mut session, input).await?
+                    {
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        }
+        .await;
+
+        disable_raw_mode().into_diagnostic()?;
+        execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)
+            .into_diagnostic()?;
+        terminal.show_cursor().into_diagnostic()?;
+        result
+    }
+
+    fn load_session(&self) -> AppResult<InteractiveSession> {
+        let state = self.state_store.load()?;
+        let install = self.install_store.inspect_current()?;
+        Ok(InteractiveSession::from_runtime_state(state, install, &self.blocklist))
+    }
+
+    async fn handle_input(
+        &self,
+        session: &mut InteractiveSession,
+        input: InputEvent,
+    ) -> AppResult<bool> {
+        if let Some(pending) = session.pending_confirmation {
+            return self.handle_confirmation(session, pending, input).await;
+        }
+
+        match input {
+            InputEvent::Up => session.select_previous(),
+            InputEvent::Down => session.select_next(),
+            InputEvent::Back => session.screen = Screen::Home,
+            InputEvent::Exit => {
+                session.screen = Screen::Exit;
+                session.last_message =
+                    "Session closed without changing network state.".to_owned();
+                return Ok(true);
+            }
+            InputEvent::Confirm => {
+                let action = session.selected_action_id();
+                match action {
+                    ActionId::RunSafetyChecks => self.run_safety_checks(session)?,
+                    ActionId::ToggleProtection => {
+                        session.pending_confirmation =
+                            Some(session.toggle_confirmation_action());
+                        session.screen = Screen::Confirm;
+                    }
+                    ActionId::ViewStatus => self.refresh_status(session)?,
+                    ActionId::ViewInstallState => self.show_install_state(session)?,
+                    ActionId::RecoverNetwork => {
+                        session.pending_confirmation =
+                            Some(ConfirmationAction::RecoverNetwork);
+                        session.screen = Screen::Confirm;
+                    }
+                    ActionId::Exit => {
+                        session.screen = Screen::Exit;
+                        session.last_message =
+                            "Session closed without changing network state.".to_owned();
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    async fn handle_confirmation(
+        &self,
+        session: &mut InteractiveSession,
+        pending: ConfirmationAction,
+        input: InputEvent,
+    ) -> AppResult<bool> {
+        match input {
+            InputEvent::Back | InputEvent::Exit => {
+                session.pending_confirmation = None;
+                session.screen = Screen::Home;
+                session.last_message =
+                    "Action canceled before applying changes.".to_owned();
+                Ok(matches!(input, InputEvent::Exit))
+            }
+            InputEvent::Confirm => {
+                session.pending_confirmation = None;
+                match pending {
+                    ConfirmationAction::EnableProtection => {
+                        self.enable_protection(session).await?
+                    }
+                    ConfirmationAction::DisableProtection => {
+                        self.disable_protection(session).await?
+                    }
+                    ConfirmationAction::RecoverNetwork => {
+                        self.recover_network(session).await?
+                    }
+                }
+                Ok(false)
+            }
+            InputEvent::Up | InputEvent::Down => Ok(false),
+        }
+    }
+
+    fn run_safety_checks(&self, session: &mut InteractiveSession) -> AppResult<()> {
+        let state = self.state_store.load()?;
+        let summary =
+            SafetyController::new(&self.paths, &self.blocklist).run_checks(&state)?;
+        let mut next_state = state;
+        next_state.last_safety_check = Some(summary.clone());
+        next_state.risk_level = summary.risk_level();
+        next_state.status_summary = summary.recommended_action.clone();
+        next_state.last_message = Some(summary.issues.join(" | "));
+        next_state.refresh_bundle(&self.blocklist);
+        self.state_store.save(&next_state)?;
+        self.event_store.record_safety(&summary)?;
+        session.sync_runtime_state(next_state);
+        session.screen = Screen::Safety;
+        if summary.issues.is_empty() {
+            session.last_message =
+                "Safety checks passed and recovery is ready.".to_owned();
+        } else {
+            session.last_message = summary.issues.join(" | ");
+        }
+        Ok(())
+    }
+
+    async fn enable_protection(&self, session: &mut InteractiveSession) -> AppResult<()> {
+        let controller = ActivationController::new(
+            &self.paths,
+            &self.config_store,
+            &self.state_store,
+            &self.event_store,
+            &self.blocklist,
+        );
+        let next_state = controller.enable().await?;
+        session.sync_runtime_state(next_state);
+        if session.runtime_state.mode == ProtectionMode::Active {
+            session.screen = Screen::Status;
+            session.last_message =
+                "Protection enabled with a restorable snapshot and local DNS runtime."
+                    .to_owned();
+        } else {
+            session.screen = Screen::Safety;
+            session.last_message = session
+                .runtime_state
+                .last_message
+                .clone()
+                .unwrap_or_else(|| session.status_summary.clone());
+        }
+        Ok(())
+    }
+
+    async fn disable_protection(
+        &self,
+        session: &mut InteractiveSession,
+    ) -> AppResult<()> {
+        let controller = ActivationController::new(
+            &self.paths,
+            &self.config_store,
+            &self.state_store,
+            &self.event_store,
+            &self.blocklist,
+        );
+        let next_state = controller.disable().await?;
+        session.sync_runtime_state(next_state);
+        session.screen = Screen::Status;
+        session.last_message =
+            "Protection disabled and previous DNS restored.".to_owned();
+        Ok(())
+    }
+
+    async fn recover_network(&self, session: &mut InteractiveSession) -> AppResult<()> {
+        let controller = RecoveryController::new(
+            &self.paths,
+            &self.config_store,
+            &self.state_store,
+            &self.event_store,
+        );
+        let next_state = controller.recover().await?;
+        session.sync_runtime_state(next_state);
+        session.screen = Screen::Recovery;
+        session.last_message =
+            "Recovery completed. Sentinel restored the latest valid network snapshot."
+                .to_owned();
+        Ok(())
+    }
+
+    fn refresh_status(&self, session: &mut InteractiveSession) -> AppResult<()> {
+        let mut state = self.state_store.load()?;
+        if let Some(pid) = state.runtime_pid
+            && state.mode == ProtectionMode::Active
+            && !runtime::process_alive(pid)
+        {
+            state.mode = ProtectionMode::Degraded;
+            state.status_summary =
+                "The runtime is no longer healthy. Recovery is recommended.".to_owned();
+            state.last_message =
+                Some("Sentinel detected a missing background runtime.".to_owned());
+        }
+        state.refresh_bundle(&self.blocklist);
+        self.state_store.save(&state)?;
+
+        let install = self.install_store.inspect_current()?;
+        session.sync_runtime_state(state);
+        session.install_state = install;
+        session.screen = Screen::Status;
+        session.last_message =
+            "Status refreshed from persisted runtime, safety, and install state."
+                .to_owned();
+        Ok(())
+    }
+
+    fn show_install_state(&self, session: &mut InteractiveSession) -> AppResult<()> {
+        let install = self.install_store.inspect_current()?;
+        session.install_state = install;
+        session.screen = Screen::Install;
+        session.last_message =
+            "Install state loaded. Use the official shell script for install lifecycle changes."
+                .to_owned();
+        Ok(())
+    }
+}
+
 pub fn require_privileges() -> AppResult<()> {
     if env::var("SENTINEL_FAKE_PLATFORM").ok().as_deref() == Some("1") {
         return Ok(());
@@ -146,310 +436,9 @@ pub fn require_privileges() -> AppResult<()> {
         .output()
         .into_diagnostic()
         .context("failed to determine current privileges")?;
-    let uid = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    if uid == "0" { Ok(()) } else { Err(miette!(AppError::PermissionDenied)) }
-}
-
-pub fn process_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
-pub fn stop_process(pid: u32) -> AppResult<()> {
-    if !process_alive(pid) {
-        return Ok(());
-    }
-
-    Command::new("kill")
-        .arg("-TERM")
-        .arg(pid.to_string())
-        .status()
-        .into_diagnostic()
-        .context("failed to stop runtime process")?;
-    Ok(())
-}
-
-pub fn normalize_domain(domain: &str) -> AppResult<String> {
-    let trimmed = domain.trim().trim_end_matches('.').to_lowercase();
-    if trimmed.is_empty()
-        || trimmed.contains(' ')
-        || !trimmed.contains('.')
-        || trimmed.starts_with('.')
-    {
-        return Err(miette!(AppError::InvalidDomain(domain.to_owned())));
-    }
-    Ok(trimmed)
-}
-
-pub struct Application {
-    paths: AppPaths,
-    global: GlobalOptions,
-    config_store: ConfigStore,
-    state_store: StateStore,
-    event_store: EventStore,
-}
-
-impl Application {
-    pub fn new(paths: AppPaths, global: GlobalOptions) -> AppResult<Self> {
-        Ok(Self {
-            config_store: ConfigStore::new(paths.clone()),
-            state_store: StateStore::new(paths.clone()),
-            event_store: EventStore::new(paths.clone()),
-            paths,
-            global,
-        })
-    }
-
-    async fn enable(&self) -> AppResult<()> {
-        require_privileges()?;
-
-        let config = self.config_store.load()?;
-        let mut state = self.state_store.load()?;
-
-        if state.mode == ProtectionMode::Active && state.runtime_pid.is_some() {
-            if process_alive(state.runtime_pid.unwrap_or_default()) {
-                return self.print_response(
-                    "enable",
-                    "Protection is already active",
-                    Some(state.mode.as_str()),
-                    json!({"already_active": true}),
-                );
-            }
-            state.mode = ProtectionMode::Degraded;
-            self.state_store.save(&state)?;
-        }
-
-        let coordinator = Coordinator::new(self.paths.clone());
-        let snapshot = coordinator.capture_snapshot()?;
-
-        let child = Command::new(std::env::current_exe().into_diagnostic()?)
-            .arg("__serve")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .into_diagnostic()
-            .context("failed to launch sentinel background runtime")?;
-
-        sleep(Duration::from_millis(400)).await;
-        if !process_alive(child.id()) {
-            return Err(miette!(AppError::RuntimeStartFailed));
-        }
-
-        if let Err(err) = coordinator.apply_local_dns(&snapshot, "127.0.0.1") {
-            let _ = stop_process(child.id());
-            let _ = coordinator.restore_snapshot(&snapshot);
-            return Err(err);
-        }
-
-        state.activate(
-            snapshot.id.clone(),
-            child.id(),
-            self.paths.runtime_addr()?,
-            &config,
-        );
-        self.state_store.save(&state)?;
-        self.event_store.append(OperationEvent::new(
-            OperationEventKind::Activate,
-            Severity::Info,
-            "Protection enabled",
-        ))?;
-
-        self.print_response(
-            "enable",
-            "Protection is active",
-            Some(state.mode.as_str()),
-            json!({
-                "snapshot_id": state.snapshot_id,
-                "runtime_pid": state.runtime_pid,
-                "rule_count": state.active_rule_count,
-                "allow_count": state.active_exclusion_count
-            }),
-        )
-    }
-
-    async fn disable(&self) -> AppResult<()> {
-        require_privileges()?;
-
-        let mut state = self.state_store.load()?;
-        if let Some(pid) = state.runtime_pid {
-            stop_process(pid)?;
-        }
-
-        let recovery = RecoveryManager::new(self.paths.clone());
-        let restored = recovery.restore_if_available(state.snapshot_id.clone())?;
-        let config = self.config_store.load()?;
-        state.deactivate(&config);
-        self.state_store.save(&state)?;
-        self.event_store.append(OperationEvent::new(
-            OperationEventKind::Disable,
-            Severity::Info,
-            "Protection disabled",
-        ))?;
-
-        self.print_response(
-            "disable",
-            "Protection is inactive",
-            Some(state.mode.as_str()),
-            json!({"restored": restored}),
-        )
-    }
-
-    async fn status(&self) -> AppResult<()> {
-        let config = self.config_store.load()?;
-        let mut state = self.state_store.load()?;
-
-        if let Some(pid) = state.runtime_pid {
-            if state.mode == ProtectionMode::Active && !process_alive(pid) {
-                state.mode = ProtectionMode::Degraded;
-                self.state_store.save(&state)?;
-            }
-        }
-
-        let body = render_status(&state, &config, &self.global)?;
-        self.emit("status", "Status loaded", Some(state.mode.as_str()), body)
-    }
-
-    async fn allow_add(&self, domain: &str) -> AppResult<()> {
-        let normalized = normalize_domain(domain)?;
-        let mut config = self.config_store.load()?;
-        let changed = config.add_allow_rule(normalized.clone());
-        self.config_store.save(&config)?;
-
-        self.event_store.append(OperationEvent::new(
-            OperationEventKind::Allow,
-            Severity::Info,
-            format!("Allow rule added for {normalized}"),
-        ))?;
-
-        self.print_response(
-            "allow-add",
-            if changed { "Allow rule applied" } else { "Allow rule already present" },
-            None,
-            json!({"domain": normalized, "changed": changed}),
-        )
-    }
-
-    async fn allow_remove(&self, domain: &str) -> AppResult<()> {
-        let normalized = normalize_domain(domain)?;
-        let mut config = self.config_store.load()?;
-        let changed = config.remove_allow_rule(&normalized);
-        self.config_store.save(&config)?;
-
-        self.event_store.append(OperationEvent::new(
-            OperationEventKind::RemoveAllow,
-            Severity::Info,
-            format!("Allow rule removed for {normalized}"),
-        ))?;
-
-        self.print_response(
-            "allow-remove",
-            if changed { "Allow rule removed" } else { "Allow rule was not present" },
-            None,
-            json!({"domain": normalized, "changed": changed}),
-        )
-    }
-
-    async fn rules_list(&self) -> AppResult<()> {
-        let config = self.config_store.load()?;
-        let body = render_rules(&built_in_rules(), config.user_rules(), &self.global)?;
-        self.emit("rules-list", "Rules listed", None, body)
-    }
-
-    async fn recover(&self) -> AppResult<()> {
-        require_privileges()?;
-
-        let mut state = self.state_store.load()?;
-        if let Some(pid) = state.runtime_pid {
-            let _ = stop_process(pid);
-        }
-
-        let recovery = RecoveryManager::new(self.paths.clone());
-        recovery.restore_latest_or_active(state.snapshot_id.clone())?;
-        let config = self.config_store.load()?;
-        state.deactivate(&config);
-        self.state_store.save(&state)?;
-        self.event_store.append(OperationEvent::new(
-            OperationEventKind::Recover,
-            Severity::Warning,
-            "Recovery completed",
-        ))?;
-
-        self.print_response(
-            "recover",
-            "Recovery completed",
-            Some(state.mode.as_str()),
-            json!({"restored": true}),
-        )
-    }
-
-    async fn events(&self, limit: usize) -> AppResult<()> {
-        let events = self.event_store.read_recent(limit)?;
-        let body = render_events(&events, &self.global)?;
-        self.emit("events", "Recent events loaded", None, body)
-    }
-
-    fn print_response(
-        &self,
-        command: &str,
-        message: &str,
-        state: Option<&str>,
-        details: Value,
-    ) -> AppResult<()> {
-        self.emit(
-            command,
-            message,
-            state,
-            if self.global.json { details } else { json!({"details": details}) },
-        )
-    }
-
-    fn emit(
-        &self,
-        command: &str,
-        message: &str,
-        state: Option<&str>,
-        details: Value,
-    ) -> AppResult<()> {
-        if self.global.json {
-            let mut payload = json!({
-                "ok": true,
-                "command": command,
-                "message": message,
-            });
-            if let Some(state) = state {
-                payload["state"] = json!(state);
-            }
-            if let Some(map) = payload.as_object_mut() {
-                if let Some(detail_map) = details.as_object() {
-                    for (key, value) in detail_map {
-                        map.insert(key.clone(), value.clone());
-                    }
-                }
-            }
-            println!("{}", serde_json::to_string_pretty(&payload).into_diagnostic()?);
-            return Ok(());
-        }
-
-        if let Some(output) = details.get("rendered").and_then(Value::as_str) {
-            println!("{output}");
-        } else {
-            println!("{message}");
-            if let Some(state) = state {
-                println!("State: {state}");
-            }
-        }
+    if String::from_utf8_lossy(&output.stdout).trim() == "0" {
         Ok(())
+    } else {
+        Err(miette!("Sentinel needs elevated privileges to change system DNS"))
     }
-}
-
-pub fn read_file_if_exists(path: &Path) -> AppResult<Option<String>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    std::fs::read_to_string(path).into_diagnostic().map(Some)
 }

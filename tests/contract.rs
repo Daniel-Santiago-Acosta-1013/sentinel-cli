@@ -1,6 +1,9 @@
-#[path = "contract/test_cli_lifecycle.rs"]
-mod test_cli_lifecycle;
-#[path = "contract/test_cli_recovery.rs"]
-mod test_cli_recovery;
-#[path = "contract/test_cli_rules.rs"]
-mod test_cli_rules;
+#[path = "support/mod.rs"]
+mod support;
+
+#[path = "contract/install_script_contract.rs"]
+mod install_script_contract;
+#[path = "contract/interaction_contract.rs"]
+mod interaction_contract;
+#[path = "contract/recovery_contract.rs"]
+mod recovery_contract;
