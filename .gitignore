@@ -1,3 +1,15 @@
 .codex/
 target/
 .DS_Store
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+.env*
+*.log
+.idea/
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
