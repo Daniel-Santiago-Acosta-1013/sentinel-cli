@@ -25,10 +25,10 @@ pub enum InstallAction {
 impl InstallAction {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Install => "Install",
-            Self::Update => "Update",
-            Self::Reinstall => "Reinstall",
-            Self::None => "None",
+            Self::Install => "Instalar",
+            Self::Update => "Actualizar",
+            Self::Reinstall => "Reinstalar",
+            Self::None => "Sin accion",
         }
     }
 }
@@ -59,7 +59,8 @@ impl Default for InstallMetadata {
             installed_path: None,
             installed_version: None,
             last_action: InstallAction::Install,
-            last_install_result: "No installer action recorded yet.".to_owned(),
+            last_install_result: "Todavia no se registro ninguna accion de instalacion."
+                .to_owned(),
         }
     }
 }

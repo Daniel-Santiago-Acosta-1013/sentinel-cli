@@ -8,9 +8,9 @@ fn starts_from_home_screen_without_flags() {
     scripted_command(&home, "exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Screen: Home"))
-        .stdout(contains("Run safety checks"))
-        .stdout(contains("Exit Sentinel"));
+        .stdout(contains("Pantalla: Inicio"))
+        .stdout(contains("Ejecutar chequeos de seguridad"))
+        .stdout(contains("Salir de Sentinel"));
 }
 
 #[test]
@@ -19,8 +19,8 @@ fn risky_actions_require_explicit_confirmation() {
     scripted_command(&home, "down,enter,back,exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Screen: Confirm"))
-        .stdout(contains("Action canceled before applying changes."));
+        .stdout(contains("Pantalla: Confirmacion"))
+        .stdout(contains("La accion sensible fue cancelada antes de cambiar la red."));
 }
 
 #[test]
@@ -32,6 +32,6 @@ fn unsafe_activation_is_blocked_when_safety_fails() {
     command
         .assert()
         .success()
-        .stdout(contains("Protection: Degraded"))
-        .stdout(contains("Safety checks failed"));
+        .stdout(contains("Proteccion: Degradada"))
+        .stdout(contains("Los chequeos fallaron"));
 }

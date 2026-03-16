@@ -1,7 +1,8 @@
 use crate::{
     app::{AppPaths, AppResult},
-    control::snapshot::{NetworkSnapshot, capture},
+    control::snapshot::{NetworkSnapshot, capture, verify_restoration},
     platform::macos::MacOsNetworkManager,
+    storage::state::RestoreVerification,
 };
 
 /// Coordinates snapshot capture, local DNS redirection, and restoration flows.
@@ -36,5 +37,12 @@ impl Coordinator {
             self.manager.set_dns_servers(&service.service, &service.dns_servers)?;
         }
         Ok(())
+    }
+
+    pub fn verify_snapshot(
+        &self,
+        snapshot: &NetworkSnapshot,
+    ) -> AppResult<RestoreVerification> {
+        verify_restoration(&self.manager, snapshot)
     }
 }

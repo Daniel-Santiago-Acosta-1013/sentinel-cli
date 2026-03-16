@@ -20,15 +20,16 @@ impl<'a> SafetyController<'a> {
         let services = manager.list_services()?;
         let mut issues = Vec::new();
         let mut status = SafetyStatus::Pass;
+        let mut detected_custom_dns = false;
 
         if services.is_empty() {
-            issues.push("No active macOS network services were detected.".to_owned());
+            issues.push("No se detectaron servicios de red activos en macOS.".to_owned());
             status = SafetyStatus::Fail;
         }
 
         if !self.blocklist.integrity_state {
             issues.push(
-                "The bundled blocklist did not pass integrity validation.".to_owned(),
+                "El bloqueador incluido no paso la validacion de integridad.".to_owned(),
             );
             status = SafetyStatus::Fail;
         }
@@ -42,7 +43,7 @@ impl<'a> SafetyController<'a> {
                 && !state.runtime_pid.is_some_and(runtime::process_alive));
         if runtime_busy {
             issues.push(format!(
-                "The local DNS port {} is already in use by another process.",
+                "El puerto DNS local {} ya esta en uso por otro proceso.",
                 addr.port()
             ));
             status = SafetyStatus::Fail;
@@ -53,8 +54,9 @@ impl<'a> SafetyController<'a> {
                 .iter()
                 .any(|service| manager.has_custom_dns(service).unwrap_or(false))
         {
+            detected_custom_dns = true;
             issues.push(
-                "Custom DNS settings were detected and will be preserved with a recovery snapshot."
+                "Se detectaron DNS personalizados; Sentinel los preservara con un snapshot recuperable."
                     .to_owned(),
             );
             status = SafetyStatus::Warn;
@@ -64,24 +66,29 @@ impl<'a> SafetyController<'a> {
         let recovery_ready = !services.is_empty();
         let recommended_action = match status {
             SafetyStatus::Pass => {
-                "Safety checks passed. You can enable protection safely.".to_owned()
+                "Los chequeos aprobaron. Puedes activar la proteccion de forma segura."
+                    .to_owned()
             }
             SafetyStatus::Warn => {
-                "Safety checks passed with cautions. Review the note and confirm before enabling."
+                "Los chequeos aprobaron con precauciones. Revisa la nota antes de confirmar."
                     .to_owned()
             }
             SafetyStatus::Fail => {
-                "Safety checks failed. Fix the issue or recover before changing network state."
+                "Los chequeos fallaron. Corrige el problema o recupera la red antes de cambiarla."
                     .to_owned()
             }
         };
 
-        Ok(SafetyCheckSummary::new(
+        let mut summary = SafetyCheckSummary::new(
             status,
             connectivity_ready,
             recovery_ready,
             issues,
             recommended_action,
-        ))
+        );
+        summary.detected_custom_dns = detected_custom_dns;
+        summary.verification_target =
+            Some("snapshot original de DNS por servicio".to_owned());
+        Ok(summary)
     }
 }

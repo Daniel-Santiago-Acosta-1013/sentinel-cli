@@ -48,13 +48,17 @@ impl<'a> ActivationController<'a> {
             state.mode = ProtectionMode::Degraded;
             state.risk_level = RiskLevel::Critical;
             state.status_summary = safety.recommended_action.clone();
-            state.last_message = Some(safety.issues.join(" | "));
+            state.last_message = Some(if safety.issues.is_empty() {
+                safety.recommended_action.clone()
+            } else {
+                safety.issues.join(" | ")
+            });
             state.last_safety_check = Some(safety);
             self.state_store.save(&state)?;
             self.event_store.append(EventRecord::new(
                 EventKind::Error,
                 Severity::Error,
-                "Activation blocked because safety checks failed",
+                "La activacion fue bloqueada porque fallaron los chequeos de seguridad",
             ))?;
             return Ok(state);
         }
@@ -66,6 +70,21 @@ impl<'a> ActivationController<'a> {
             self.event_store,
         );
         let snapshot = recovery.capture_snapshot()?;
+        state.mode = ProtectionMode::Recovering;
+        state.risk_level = RiskLevel::Warning;
+        state.snapshot_id = Some(snapshot.snapshot_id.clone());
+        state.status_summary =
+            "Sentinel esta preparando un cambio de red con snapshot recuperable."
+                .to_owned();
+        state.last_message = Some(
+            "Se capturo la configuracion original antes de activar la proteccion."
+                .to_owned(),
+        );
+        state.last_transition_at = chrono::Utc::now();
+        state.last_safety_check = Some(safety.clone());
+        state.last_verification_result = None;
+        self.state_store.save(&state)?;
+
         let runtime_pid = runtime::spawn_background()?;
         sleep(Duration::from_millis(450)).await;
         let manager =
@@ -78,16 +97,46 @@ impl<'a> ActivationController<'a> {
         {
             let _ = runtime::stop_process(runtime_pid);
             let _ = recovery.restore_snapshot(&snapshot);
-            return Err(err);
+            let verification = crate::control::snapshot::verify_restoration(
+                &manager,
+                &crate::control::snapshot::NetworkSnapshot {
+                    id: snapshot.snapshot_id.clone(),
+                    captured_at: snapshot.captured_at,
+                    interface_scope: snapshot.affected_services.clone(),
+                    services: snapshot
+                        .dns_state
+                        .iter()
+                        .map(|service| crate::control::snapshot::NetworkServiceSnapshot {
+                            service: service.service.clone(),
+                            dns_servers: service.dns_servers.clone(),
+                        })
+                        .collect(),
+                    restorable: snapshot.restorable,
+                },
+            )?;
+            state.mode = ProtectionMode::Degraded;
+            state.risk_level = RiskLevel::Critical;
+            state.status_summary = verification.summary.clone();
+            state.last_message = Some(format!(
+                "La activacion fallo y Sentinel intento restaurar la red: {err}"
+            ));
+            state.last_verification_result = Some(verification);
+            self.state_store.save(&state)?;
+            self.event_store.append(EventRecord::new(
+                EventKind::Error,
+                Severity::Error,
+                "La activacion fallo durante el cambio de DNS y la red fue restaurada",
+            ))?;
+            return Ok(state);
         }
 
         state.mode = ProtectionMode::Active;
         state.risk_level = safety.risk_level();
         state.status_summary =
-            "Protection is active. Sentinel is serving filtered DNS locally.".to_owned();
+            "La proteccion esta activa. Sentinel responde DNS filtrado localmente."
+                .to_owned();
         state.last_message = Some(
-            "A recovery snapshot was stored before Sentinel changed DNS settings."
-                .to_owned(),
+            "Sentinel guardo un snapshot recuperable antes de cambiar el DNS.".to_owned(),
         );
         state.runtime_pid = Some(runtime_pid);
         state.runtime_addr = Some(self.paths.runtime_addr()?);
@@ -95,11 +144,12 @@ impl<'a> ActivationController<'a> {
         state.last_transition_at = chrono::Utc::now();
         state.refresh_bundle(self.blocklist);
         state.last_safety_check = Some(safety);
+        state.last_verification_result = None;
         self.state_store.save(&state)?;
         self.event_store.append(EventRecord::new(
             EventKind::Enable,
             Severity::Info,
-            "Protection enabled after successful safety checks",
+            "Proteccion activada despues de chequeos de seguridad exitosos",
         ))?;
         Ok(state)
     }
@@ -119,30 +169,95 @@ impl<'a> ActivationController<'a> {
             self.state_store,
             self.event_store,
         );
-        if let Some(snapshot_id) = state.snapshot_id.clone()
-            && let Some(snapshot) = recovery.load_snapshot(&snapshot_id)?
-        {
-            recovery.restore_snapshot(&snapshot)?;
-        }
-
-        state.mode = ProtectionMode::Inactive;
-        state.risk_level = RiskLevel::Normal;
+        state.mode = ProtectionMode::Recovering;
+        state.risk_level = RiskLevel::Warning;
         state.status_summary =
-            "Protection is inactive. Original DNS settings are restored.".to_owned();
+            "Sentinel esta restaurando la configuracion original de red.".to_owned();
         state.last_message = Some(
-            "Sentinel stopped the local DNS runtime and restored the previous DNS."
+            "Se detuvo el runtime local y ahora se restaurara el snapshot original."
                 .to_owned(),
         );
         state.runtime_pid = None;
         state.runtime_addr = None;
-        state.snapshot_id = None;
         state.last_transition_at = chrono::Utc::now();
-        state.refresh_bundle(self.blocklist);
+        self.state_store.save(&state)?;
+
+        if let Some(snapshot_id) = state.snapshot_id.clone()
+            && let Some(snapshot) = recovery.load_snapshot(&snapshot_id)?
+        {
+            recovery.restore_snapshot(&snapshot)?;
+            let manager =
+                crate::platform::macos::MacOsNetworkManager::new(self.paths.clone());
+            let verification = crate::control::snapshot::verify_restoration(
+                &manager,
+                &crate::control::snapshot::NetworkSnapshot {
+                    id: snapshot.snapshot_id.clone(),
+                    captured_at: snapshot.captured_at,
+                    interface_scope: snapshot.affected_services.clone(),
+                    services: snapshot
+                        .dns_state
+                        .iter()
+                        .map(|service| crate::control::snapshot::NetworkServiceSnapshot {
+                            service: service.service.clone(),
+                            dns_servers: service.dns_servers.clone(),
+                        })
+                        .collect(),
+                    restorable: snapshot.restorable,
+                },
+            )?;
+
+            if verification.matches_snapshot {
+                state.mode = ProtectionMode::Inactive;
+                state.risk_level = RiskLevel::Normal;
+                state.status_summary =
+                    "La proteccion esta inactiva y la red original fue restaurada."
+                        .to_owned();
+                state.last_message = Some(
+                    "Sentinel restauro y verifico correctamente la configuracion original de DNS."
+                        .to_owned(),
+                );
+                state.snapshot_id = None;
+            } else {
+                state.mode = ProtectionMode::Degraded;
+                state.risk_level = RiskLevel::Critical;
+                state.status_summary = verification.summary.clone();
+                state.last_message = Some(
+                    "Sentinel desactivo la proteccion, pero detecto diferencias frente al snapshot original."
+                        .to_owned(),
+                );
+            }
+            state.last_verification_result = Some(verification.clone());
+            state.last_transition_at = chrono::Utc::now();
+            state.refresh_bundle(self.blocklist);
+            self.state_store.save(&state)?;
+            self.event_store.append(EventRecord::new(
+                EventKind::Disable,
+                if verification.matches_snapshot {
+                    Severity::Info
+                } else {
+                    Severity::Error
+                },
+                if verification.matches_snapshot {
+                    "Proteccion desactivada y red restaurada con verificacion exitosa"
+                } else {
+                    "Proteccion desactivada, pero la restauracion no coincidio con el snapshot"
+                },
+            ))?;
+            return Ok(state);
+        }
+
+        state.mode = ProtectionMode::Degraded;
+        state.risk_level = RiskLevel::Critical;
+        state.status_summary =
+            "No se encontro un snapshot recuperable para restaurar la red.".to_owned();
+        state.last_message =
+            Some("Sentinel no pudo completar la desactivacion segura porque falta el snapshot.".to_owned());
+        state.last_transition_at = chrono::Utc::now();
         self.state_store.save(&state)?;
         self.event_store.append(EventRecord::new(
-            EventKind::Disable,
-            Severity::Info,
-            "Protection disabled and DNS restored",
+            EventKind::Error,
+            Severity::Error,
+            "No se encontro un snapshot recuperable durante la desactivacion",
         ))?;
         Ok(state)
     }

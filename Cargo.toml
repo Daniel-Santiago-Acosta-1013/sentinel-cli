@@ -6,6 +6,7 @@ description = "System-level CLI ad blocker with safe recovery workflows"
 
 [dependencies]
 chrono = { version = "0.4", features = ["clock", "serde"] }
+comfy-table = "7.1"
 crossterm = "0.28"
 directories = "5.0"
 hickory-proto = "0.24"

@@ -1,40 +1,33 @@
 use std::{
     env,
-    io::{self, stdout},
+    io::{self},
     net::SocketAddr,
     path::{Path, PathBuf},
     process::Command,
-    time::Duration,
 };
 
-use crossterm::{
-    cursor,
-    event::{self, Event},
-    execute,
-    terminal::{
-        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-    },
-};
 use directories::ProjectDirs;
 use miette::{Context, IntoDiagnostic, Result, miette};
-use ratatui::{Terminal, backend::CrosstermBackend};
 use tracing_subscriber::EnvFilter;
 
 use crate::{
     blocking::{blocklist::BlocklistBundle, runtime},
+    cli::{
+        InputEvent,
+        menu_state::{ActionId, ConfirmationAction, MenuSession, ViewId},
+        parse_script, renderer,
+        terminal::TerminalSession,
+    },
     control::{
         activation::ActivationController, recovery::RecoveryController,
         safety::SafetyController,
     },
     install::version,
     storage::{
-        config::ConfigStore, events::EventStore, install::InstallStore,
-        state::ProtectionMode,
-    },
-    tui::{
-        app_state::{ActionId, ConfirmationAction, InteractiveSession, Screen},
-        input::{InputEvent, parse_script, translate_key},
-        screens,
+        config::ConfigStore,
+        events::EventStore,
+        install::InstallStore,
+        state::{ProtectionMode, StateStore},
     },
 };
 
@@ -57,7 +50,9 @@ impl AppPaths {
         } else {
             let project_dirs = ProjectDirs::from("com", "sentinel", "sentinel")
                 .ok_or_else(|| {
-                    miette!("unable to determine application support directory")
+                    miette!(
+                        "no se pudo determinar el directorio de soporte de la aplicacion"
+                    )
                 })?;
             project_dirs.data_dir().to_path_buf()
         };
@@ -137,7 +132,7 @@ pub struct SentinelApp {
     paths: AppPaths,
     blocklist: BlocklistBundle,
     config_store: ConfigStore,
-    state_store: crate::storage::state::StateStore,
+    state_store: StateStore,
     event_store: EventStore,
     install_store: InstallStore,
 }
@@ -147,7 +142,7 @@ impl SentinelApp {
         let blocklist = BlocklistBundle::load()?;
         Ok(Self {
             config_store: ConfigStore::new(paths.clone()),
-            state_store: crate::storage::state::StateStore::new(paths.clone()),
+            state_store: StateStore::new(paths.clone()),
             event_store: EventStore::new(paths.clone()),
             install_store: InstallStore::new(paths.clone()),
             paths,
@@ -162,7 +157,7 @@ impl SentinelApp {
 
         if !std::io::IsTerminal::is_terminal(&io::stdout()) {
             return Err(miette!(
-                "Sentinel requires an interactive terminal. Re-run it in a TTY."
+                "Sentinel requiere una terminal interactiva. Vuelve a ejecutarlo en un TTY."
             ));
         }
 
@@ -170,14 +165,14 @@ impl SentinelApp {
     }
 
     async fn run_scripted(self, script: String) -> AppResult<()> {
-        let mut session = self.load_session()?;
-        let mut transcript = vec![screens::render_snapshot(&session)];
+        let mut session = self.load_session(true)?;
+        let mut transcript = vec![renderer::render_snapshot(&session)];
         for event in parse_script(&script)? {
-            if self.handle_input(&mut session, event).await? {
-                transcript.push(screens::render_snapshot(&session));
+            let should_exit = self.handle_input(&mut session, event).await?;
+            transcript.push(renderer::render_snapshot(&session));
+            if should_exit {
                 break;
             }
-            transcript.push(screens::render_snapshot(&session));
         }
 
         println!("{}", transcript.join("\n\n---\n\n"));
@@ -185,50 +180,38 @@ impl SentinelApp {
     }
 
     async fn run_terminal(self) -> AppResult<()> {
-        enable_raw_mode().into_diagnostic()?;
-        let mut out = stdout();
-        execute!(out, EnterAlternateScreen, cursor::Hide).into_diagnostic()?;
+        let mut terminal = TerminalSession::start()?;
+        let mut session = self.load_session(false)?;
 
-        let backend = CrosstermBackend::new(out);
-        let mut terminal = Terminal::new(backend).into_diagnostic()?;
-        let mut session = self.load_session()?;
-
-        let result = async {
-            loop {
-                terminal
-                    .draw(|frame| screens::draw(frame, &session))
-                    .into_diagnostic()?;
-
-                if event::poll(Duration::from_millis(250)).into_diagnostic()? {
-                    let event = event::read().into_diagnostic()?;
-                    if let Event::Key(key) = event
-                        && let Some(input) = translate_key(key)
-                        && self.handle_input(&mut session, input).await?
-                    {
-                        break;
-                    }
-                }
+        loop {
+            let frame = renderer::render(&session, terminal.width());
+            terminal.draw(&frame)?;
+            let input = terminal.read_input()?;
+            let should_exit = self.handle_input(&mut session, input).await?;
+            if should_exit {
+                let frame = renderer::render(&session, terminal.width());
+                terminal.draw(&frame)?;
+                break;
             }
-            Ok(())
         }
-        .await;
 
-        disable_raw_mode().into_diagnostic()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)
-            .into_diagnostic()?;
-        terminal.show_cursor().into_diagnostic()?;
-        result
+        Ok(())
     }
 
-    fn load_session(&self) -> AppResult<InteractiveSession> {
+    fn load_session(&self, transcript_mode: bool) -> AppResult<MenuSession> {
         let state = self.state_store.load()?;
         let install = self.install_store.inspect_current()?;
-        Ok(InteractiveSession::from_runtime_state(state, install, &self.blocklist))
+        Ok(MenuSession::from_runtime_state(
+            state,
+            install,
+            &self.blocklist,
+            transcript_mode,
+        ))
     }
 
     async fn handle_input(
         &self,
-        session: &mut InteractiveSession,
+        session: &mut MenuSession,
         input: InputEvent,
     ) -> AppResult<bool> {
         if let Some(pending) = session.pending_confirmation {
@@ -236,15 +219,6 @@ impl SentinelApp {
         }
 
         match input {
-            InputEvent::Up => session.select_previous(),
-            InputEvent::Down => session.select_next(),
-            InputEvent::Back => session.screen = Screen::Home,
-            InputEvent::Exit => {
-                session.screen = Screen::Exit;
-                session.last_message =
-                    "Session closed without changing network state.".to_owned();
-                return Ok(true);
-            }
             InputEvent::Confirm => {
                 let action = session.selected_action_id();
                 match action {
@@ -252,22 +226,42 @@ impl SentinelApp {
                     ActionId::ToggleProtection => {
                         session.pending_confirmation =
                             Some(session.toggle_confirmation_action());
-                        session.screen = Screen::Confirm;
+                        session.view = ViewId::Confirmacion;
                     }
                     ActionId::ViewStatus => self.refresh_status(session)?,
                     ActionId::ViewInstallState => self.show_install_state(session)?,
                     ActionId::RecoverNetwork => {
                         session.pending_confirmation =
                             Some(ConfirmationAction::RecoverNetwork);
-                        session.screen = Screen::Confirm;
+                        session.view = ViewId::Confirmacion;
                     }
                     ActionId::Exit => {
-                        session.screen = Screen::Exit;
+                        session.view = ViewId::Salida;
                         session.last_message =
-                            "Session closed without changing network state.".to_owned();
+                            "Sesion cerrada sin acumular texto ni dejar cambios pendientes."
+                                .to_owned();
                         return Ok(true);
                     }
                 }
+            }
+            InputEvent::Up => session.select_previous(),
+            InputEvent::Down => session.select_next(),
+            InputEvent::Back => {
+                session.view = if matches!(
+                    session.runtime_state.mode,
+                    ProtectionMode::Degraded | ProtectionMode::Recovering
+                ) {
+                    ViewId::Recuperacion
+                } else {
+                    ViewId::Inicio
+                };
+            }
+            InputEvent::Exit => {
+                session.view = ViewId::Salida;
+                session.last_message =
+                    "Sesion cerrada sin acumular texto ni dejar cambios pendientes."
+                        .to_owned();
+                return Ok(true);
             }
         }
         Ok(false)
@@ -275,16 +269,24 @@ impl SentinelApp {
 
     async fn handle_confirmation(
         &self,
-        session: &mut InteractiveSession,
+        session: &mut MenuSession,
         pending: ConfirmationAction,
         input: InputEvent,
     ) -> AppResult<bool> {
         match input {
             InputEvent::Back | InputEvent::Exit => {
                 session.pending_confirmation = None;
-                session.screen = Screen::Home;
+                session.view = if matches!(
+                    session.runtime_state.mode,
+                    ProtectionMode::Degraded | ProtectionMode::Recovering
+                ) {
+                    ViewId::Recuperacion
+                } else {
+                    ViewId::Inicio
+                };
                 session.last_message =
-                    "Action canceled before applying changes.".to_owned();
+                    "La accion sensible fue cancelada antes de cambiar la red."
+                        .to_owned();
                 Ok(matches!(input, InputEvent::Exit))
             }
             InputEvent::Confirm => {
@@ -306,7 +308,7 @@ impl SentinelApp {
         }
     }
 
-    fn run_safety_checks(&self, session: &mut InteractiveSession) -> AppResult<()> {
+    fn run_safety_checks(&self, session: &mut MenuSession) -> AppResult<()> {
         let state = self.state_store.load()?;
         let summary =
             SafetyController::new(&self.paths, &self.blocklist).run_checks(&state)?;
@@ -314,22 +316,25 @@ impl SentinelApp {
         next_state.last_safety_check = Some(summary.clone());
         next_state.risk_level = summary.risk_level();
         next_state.status_summary = summary.recommended_action.clone();
-        next_state.last_message = Some(summary.issues.join(" | "));
+        next_state.last_message = Some(if summary.issues.is_empty() {
+            "Los chequeos terminaron sin alertas bloqueantes.".to_owned()
+        } else {
+            summary.issues.join(" | ")
+        });
         next_state.refresh_bundle(&self.blocklist);
         self.state_store.save(&next_state)?;
         self.event_store.record_safety(&summary)?;
         session.sync_runtime_state(next_state);
-        session.screen = Screen::Safety;
-        if summary.issues.is_empty() {
-            session.last_message =
-                "Safety checks passed and recovery is ready.".to_owned();
-        } else {
-            session.last_message = summary.issues.join(" | ");
-        }
+        session.view = ViewId::Seguridad;
+        session.last_message = session
+            .runtime_state
+            .last_message
+            .clone()
+            .unwrap_or_else(|| session.status_summary.clone());
         Ok(())
     }
 
-    async fn enable_protection(&self, session: &mut InteractiveSession) -> AppResult<()> {
+    async fn enable_protection(&self, session: &mut MenuSession) -> AppResult<()> {
         let controller = ActivationController::new(
             &self.paths,
             &self.config_store,
@@ -340,12 +345,12 @@ impl SentinelApp {
         let next_state = controller.enable().await?;
         session.sync_runtime_state(next_state);
         if session.runtime_state.mode == ProtectionMode::Active {
-            session.screen = Screen::Status;
+            session.view = ViewId::Estado;
             session.last_message =
-                "Protection enabled with a restorable snapshot and local DNS runtime."
+                "Proteccion activada con snapshot recuperable y runtime DNS local."
                     .to_owned();
         } else {
-            session.screen = Screen::Safety;
+            session.view = ViewId::Seguridad;
             session.last_message = session
                 .runtime_state
                 .last_message
@@ -355,10 +360,7 @@ impl SentinelApp {
         Ok(())
     }
 
-    async fn disable_protection(
-        &self,
-        session: &mut InteractiveSession,
-    ) -> AppResult<()> {
+    async fn disable_protection(&self, session: &mut MenuSession) -> AppResult<()> {
         let controller = ActivationController::new(
             &self.paths,
             &self.config_store,
@@ -368,13 +370,23 @@ impl SentinelApp {
         );
         let next_state = controller.disable().await?;
         session.sync_runtime_state(next_state);
-        session.screen = Screen::Status;
-        session.last_message =
-            "Protection disabled and previous DNS restored.".to_owned();
+        session.view = if matches!(
+            session.runtime_state.mode,
+            ProtectionMode::Degraded | ProtectionMode::Recovering
+        ) {
+            ViewId::Recuperacion
+        } else {
+            ViewId::Estado
+        };
+        session.last_message = session
+            .runtime_state
+            .last_message
+            .clone()
+            .unwrap_or_else(|| session.status_summary.clone());
         Ok(())
     }
 
-    async fn recover_network(&self, session: &mut InteractiveSession) -> AppResult<()> {
+    async fn recover_network(&self, session: &mut MenuSession) -> AppResult<()> {
         let controller = RecoveryController::new(
             &self.paths,
             &self.config_store,
@@ -383,24 +395,30 @@ impl SentinelApp {
         );
         let next_state = controller.recover().await?;
         session.sync_runtime_state(next_state);
-        session.screen = Screen::Recovery;
+        session.view = ViewId::Recuperacion;
         session.last_message =
-            "Recovery completed. Sentinel restored the latest valid network snapshot."
-                .to_owned();
+            session.runtime_state.last_message.clone().unwrap_or_else(|| {
+                "La recuperacion termino y Sentinel verifico el estado de red.".to_owned()
+            });
         Ok(())
     }
 
-    fn refresh_status(&self, session: &mut InteractiveSession) -> AppResult<()> {
+    fn refresh_status(&self, session: &mut MenuSession) -> AppResult<()> {
         let mut state = self.state_store.load()?;
         if let Some(pid) = state.runtime_pid
             && state.mode == ProtectionMode::Active
             && !runtime::process_alive(pid)
         {
             state.mode = ProtectionMode::Degraded;
+            state.risk_level = crate::storage::state::RiskLevel::Critical;
             state.status_summary =
-                "The runtime is no longer healthy. Recovery is recommended.".to_owned();
+                "El runtime local ya no esta sano. Se recomienda recuperar la red."
+                    .to_owned();
             state.last_message =
-                Some("Sentinel detected a missing background runtime.".to_owned());
+                Some(
+                    "Sentinel detecto que el runtime en segundo plano desaparecio. Se recomienda recuperar la red."
+                        .to_owned(),
+                );
         }
         state.refresh_bundle(&self.blocklist);
         self.state_store.save(&state)?;
@@ -408,19 +426,19 @@ impl SentinelApp {
         let install = self.install_store.inspect_current()?;
         session.sync_runtime_state(state);
         session.install_state = install;
-        session.screen = Screen::Status;
+        session.view = ViewId::Estado;
         session.last_message =
-            "Status refreshed from persisted runtime, safety, and install state."
+            "Estado actualizado desde el runtime persistido, seguridad e instalacion."
                 .to_owned();
         Ok(())
     }
 
-    fn show_install_state(&self, session: &mut InteractiveSession) -> AppResult<()> {
+    fn show_install_state(&self, session: &mut MenuSession) -> AppResult<()> {
         let install = self.install_store.inspect_current()?;
         session.install_state = install;
-        session.screen = Screen::Install;
+        session.view = ViewId::Instalacion;
         session.last_message =
-            "Install state loaded. Use the official shell script for install lifecycle changes."
+            "Estado de instalacion cargado. Usa el script oficial para instalar o actualizar."
                 .to_owned();
         Ok(())
     }
@@ -435,10 +453,12 @@ pub fn require_privileges() -> AppResult<()> {
         .arg("-u")
         .output()
         .into_diagnostic()
-        .context("failed to determine current privileges")?;
+        .context("no se pudieron determinar los privilegios actuales")?;
     if String::from_utf8_lossy(&output.stdout).trim() == "0" {
         Ok(())
     } else {
-        Err(miette!("Sentinel needs elevated privileges to change system DNS"))
+        Err(miette!(
+            "Sentinel necesita privilegios elevados para cambiar el DNS del sistema"
+        ))
     }
 }

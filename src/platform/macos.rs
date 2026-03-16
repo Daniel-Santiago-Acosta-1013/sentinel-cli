@@ -27,7 +27,11 @@ impl MacOsNetworkManager {
         if self.is_fake_mode() {
             let mut state = self.load_fake_state()?;
             if state.services.is_empty() {
-                state.services.insert("Wi-Fi".to_owned(), vec!["1.1.1.1".to_owned()]);
+                if let Some(seed) = self.seed_fake_state_from_env()? {
+                    state = seed;
+                } else {
+                    state.services.insert("Wi-Fi".to_owned(), vec!["1.1.1.1".to_owned()]);
+                }
                 self.save_fake_state(&state)?;
             }
             return Ok(state.services.keys().cloned().collect());
@@ -77,7 +81,16 @@ impl MacOsNetworkManager {
     pub fn set_dns_servers(&self, service: &str, servers: &[String]) -> AppResult<()> {
         if self.is_fake_mode() {
             let mut state = self.load_fake_state()?;
-            state.services.insert(service.to_owned(), servers.to_vec());
+            let should_corrupt_restore =
+                std::env::var("SENTINEL_SIMULATE_RESTORE_MISMATCH").ok().as_deref()
+                    == Some("1")
+                    && servers != ["127.0.0.1".to_owned()];
+            let applied = if should_corrupt_restore {
+                vec!["203.0.113.53".to_owned()]
+            } else {
+                servers.to_vec()
+            };
+            state.services.insert(service.to_owned(), applied);
             self.save_fake_state(&state)?;
             return Ok(());
         }
@@ -119,5 +132,12 @@ impl MacOsNetworkManager {
         let payload = serde_json::to_string_pretty(state).into_diagnostic()?;
         std::fs::write(self.fake_file(), payload).into_diagnostic()?;
         Ok(())
+    }
+
+    fn seed_fake_state_from_env(&self) -> AppResult<Option<FakeNetworkState>> {
+        let Some(seed) = std::env::var("SENTINEL_FAKE_NETWORK_TEMPLATE").ok() else {
+            return Ok(None);
+        };
+        serde_json::from_str(&seed).into_diagnostic().map(Some)
     }
 }

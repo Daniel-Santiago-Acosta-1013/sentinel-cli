@@ -29,6 +29,19 @@ pub fn scripted_command(home: &TempDir, script: &str, port: u16) -> Command {
     command
 }
 
+pub fn scripted_command_with_env(
+    home: &TempDir,
+    script: &str,
+    port: u16,
+    envs: &[(&str, &str)],
+) -> Command {
+    let mut command = scripted_command(home, script, port);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command
+}
+
 pub fn install_command(install_dir: &Path, source_bin: &Path) -> Command {
     let mut command = Command::new("sh");
     command
@@ -56,4 +69,25 @@ pub fn write_executable(path: &Path, contents: &str) {
         permissions.set_mode(0o755);
         fs::set_permissions(path, permissions).expect("chmod");
     }
+}
+
+pub fn seed_fake_network(home: &TempDir, services: &[(&str, &[&str])]) {
+    let state_dir = home.path().join("state");
+    fs::create_dir_all(&state_dir).expect("create state dir");
+    let mut payload = serde_json::json!({ "services": {} });
+    for (service, dns) in services {
+        payload["services"][service] = serde_json::json!(
+            dns.iter().map(|item| item.to_string()).collect::<Vec<_>>()
+        );
+    }
+    fs::write(
+        state_dir.join("fake-network.json"),
+        serde_json::to_string_pretty(&payload).expect("serialize fake network"),
+    )
+    .expect("write fake network");
+}
+
+pub fn read_fake_network(home: &TempDir) -> String {
+    fs::read_to_string(home.path().join("state/fake-network.json"))
+        .expect("read fake network")
 }

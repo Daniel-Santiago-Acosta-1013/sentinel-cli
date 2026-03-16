@@ -1,138 +1,240 @@
-use comfy_table::{Cell, ContentArrangement, Table, presets::UTF8_BORDERS_ONLY};
-use miette::{IntoDiagnostic, Result};
-use serde_json::json;
+use crate::storage::{install::InstallationState, state::RuntimeState};
 
-use crate::{
-    cli::{GlobalOptions, styles},
-    core::{events::OperationEvent, rules::RuleEntry, state::ProtectionState},
-    storage::config::AppConfig,
-};
+pub fn render_summary_table(
+    runtime: &RuntimeState,
+    next_action: &str,
+    terminal_width: usize,
+    compact: bool,
+) -> String {
+    let mut rows = vec![
+        ("Proteccion", runtime.mode.label().to_owned()),
+        ("Riesgo", runtime.risk_level.label().to_owned()),
+        (
+            "Snapshot activo",
+            runtime.snapshot_id.as_deref().unwrap_or("-").to_owned(),
+        ),
+        ("Siguiente accion", next_action.to_owned()),
+    ];
+    if !compact {
+        rows.push((
+            "Dominios bloqueados",
+            runtime.blocklist_domain_count.to_string(),
+        ));
+        rows.push((
+            "Version del bloqueador",
+            runtime.blocklist_version.clone(),
+        ));
+    }
+    render_table("Campo", "Valor", &rows, terminal_width)
+}
 
-pub fn render_status(
-    state: &ProtectionState,
-    config: &AppConfig,
-    options: &GlobalOptions,
-) -> Result<serde_json::Value> {
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_BORDERS_ONLY)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            Cell::new(styles::header("Field", options.no_color)),
-            Cell::new(styles::header("Value", options.no_color)),
-        ]);
-    table.add_row(vec![Cell::new("State"), Cell::new(state.mode.as_str())]);
-    table.add_row(vec![
-        Cell::new("Active rules"),
-        Cell::new(state.active_rule_count.to_string()),
-    ]);
-    table.add_row(vec![
-        Cell::new("Allow rules"),
-        Cell::new(state.active_exclusion_count.to_string()),
-    ]);
-    table.add_row(vec![
-        Cell::new("Runtime PID"),
-        Cell::new(
-            state
+pub fn render_status_table(
+    runtime: &RuntimeState,
+    install: &InstallationState,
+    terminal_width: usize,
+    compact: bool,
+) -> String {
+    let mut rows = vec![
+        ("Proteccion", runtime.mode.label().to_owned()),
+        ("Riesgo", runtime.risk_level.label().to_owned()),
+        (
+            "Runtime local",
+            runtime
                 .runtime_pid
                 .map(|pid| pid.to_string())
-                .unwrap_or_else(|| "-".to_owned()),
+                .unwrap_or_else(|| "No activo".to_owned()),
         ),
-    ]);
-    if options.verbose {
-        table.add_row(vec![
-            Cell::new("Snapshot"),
-            Cell::new(state.snapshot_id.clone().unwrap_or_else(|| "-".to_owned())),
-        ]);
-        table.add_row(vec![
-            Cell::new("Last transition"),
-            Cell::new(state.last_transition_at.to_rfc3339()),
-        ]);
+        (
+            "Snapshot activo",
+            runtime.snapshot_id.as_deref().unwrap_or("-").to_owned(),
+        ),
+        (
+            "Ruta instalada",
+            install
+                .path_entry
+                .as_deref()
+                .unwrap_or("No disponible")
+                .to_owned(),
+        ),
+        ("Resumen", runtime.status_summary.clone()),
+    ];
+    if let Some(verification) = runtime.last_verification_result.as_ref() {
+        rows.push(("Verificacion", verification.summary.clone()));
     }
-
-    Ok(json!({
-        "rendered": format!(
-            "{}\n{}\n{}",
-            styles::accent("Sentinel Status", options.no_color),
-            table,
-            if config.allow_rules.is_empty() {
-                "No active allow rules".to_owned()
-            } else {
-                format!("Active allow rules: {}", config.allow_rules.len())
-            }
-        ),
-        "active_rule_count": state.active_rule_count,
-        "active_exclusion_count": state.active_exclusion_count,
-        "runtime_pid": state.runtime_pid,
-    }))
+    if !compact {
+        rows.push((
+            "Version instalada",
+            install
+                .installed_version
+                .as_deref()
+                .unwrap_or("No detectada")
+                .to_owned(),
+        ));
+        rows.push(("Accion sugerida", install.action.label().to_owned()));
+    }
+    render_table("Estado", "Valor", &rows, terminal_width)
 }
 
-pub fn render_rules(
-    block_rules: &[RuleEntry],
-    allow_rules: Vec<RuleEntry>,
-    options: &GlobalOptions,
-) -> Result<serde_json::Value> {
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_BORDERS_ONLY)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            Cell::new(styles::header("Kind", options.no_color)),
-            Cell::new(styles::header("Match", options.no_color)),
-            Cell::new(styles::header("Value", options.no_color)),
-            Cell::new(styles::header("Source", options.no_color)),
-        ]);
-
-    for rule in block_rules.iter().chain(allow_rules.iter()) {
-        table.add_row(vec![
-            Cell::new(rule.kind.as_str()),
-            Cell::new(rule.match_type.as_str()),
-            Cell::new(rule.value.clone()),
-            Cell::new(rule.source.as_str()),
-        ]);
+pub fn render_safety_table(
+    runtime: &RuntimeState,
+    terminal_width: usize,
+    compact: bool,
+) -> String {
+    let mut rows = Vec::new();
+    if let Some(summary) = runtime.last_safety_check.as_ref() {
+        rows.push(("Estado", summary.status.label().to_owned()));
+        rows.push((
+            "Conectividad lista",
+            if summary.connectivity_ready { "Si" } else { "No" }.to_owned(),
+        ));
+        rows.push((
+            "Recuperacion lista",
+            if summary.recovery_ready { "Si" } else { "No" }.to_owned(),
+        ));
+        rows.push((
+            "DNS personalizados",
+            if summary.detected_custom_dns { "Si" } else { "No" }.to_owned(),
+        ));
+        if !compact {
+            rows.push(("Accion sugerida", summary.recommended_action.clone()));
+        }
+    } else {
+        rows.push(("Estado", "Sin ejecutar".to_owned()));
+        rows.push((
+            "Accion sugerida",
+            "Ejecuta chequeos antes de cambiar la red".to_owned(),
+        ));
     }
-
-    Ok(json!({
-        "rendered": format!(
-            "{}\n{}",
-            styles::accent("Sentinel Rules", options.no_color),
-            table
-        ),
-        "block_rules": block_rules.len(),
-        "allow_rules": allow_rules.len(),
-    }))
+    render_table("Chequeo", "Resultado", &rows, terminal_width)
 }
 
-pub fn render_events(
-    events: &[OperationEvent],
-    options: &GlobalOptions,
-) -> Result<serde_json::Value> {
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_BORDERS_ONLY)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec![
-            Cell::new(styles::header("Time", options.no_color)),
-            Cell::new(styles::header("Type", options.no_color)),
-            Cell::new(styles::header("Severity", options.no_color)),
-            Cell::new(styles::header("Message", options.no_color)),
-        ]);
+pub fn render_recovery_table(
+    runtime: &RuntimeState,
+    terminal_width: usize,
+    compact: bool,
+) -> String {
+    let mut rows = vec![
+        ("Modo actual", runtime.mode.label().to_owned()),
+        (
+            "Snapshot",
+            runtime.snapshot_id.as_deref().unwrap_or("-").to_owned(),
+        ),
+    ];
+    if let Some(verification) = runtime.last_verification_result.as_ref() {
+        rows.push((
+            "Coincide con snapshot",
+            if verification.matches_snapshot { "Si" } else { "No" }.to_owned(),
+        ));
+        if !compact {
+            rows.push((
+                "Servicios con diferencia",
+                join_or_dash(&verification.mismatched_services),
+            ));
+        }
+        rows.push(("Resumen", verification.summary.clone()));
+    } else {
+        rows.push(("Resumen", runtime.status_summary.clone()));
+    }
+    render_table("Recuperacion", "Valor", &rows, terminal_width)
+}
 
-    for event in events {
-        table.add_row(vec![
-            Cell::new(event.timestamp.to_rfc3339()),
-            Cell::new(event.kind.as_str()),
-            Cell::new(event.severity.as_str()),
-            Cell::new(event.message.clone()),
-        ]);
+pub fn render_install_table(
+    install: &InstallationState,
+    terminal_width: usize,
+) -> String {
+    let rows = vec![
+        (
+            "Instalado",
+            if install.installed { "Si" } else { "No" }.to_owned(),
+        ),
+        ("Version objetivo", install.target_version.clone()),
+        (
+            "Version instalada",
+            install
+                .installed_version
+                .as_deref()
+                .unwrap_or("No detectada")
+                .to_owned(),
+        ),
+        ("Accion sugerida", install.action.label().to_owned()),
+        ("Resultado previo", install.last_install_result.clone()),
+    ];
+    render_table("Instalacion", "Valor", &rows, terminal_width)
+}
+
+fn render_table(
+    left_header: &str,
+    right_header: &str,
+    rows: &[(&str, String)],
+    terminal_width: usize,
+) -> String {
+    let width = terminal_width.saturating_sub(4).clamp(48, 92);
+    let inner_width = width.saturating_sub(4);
+    let max_label_width = rows
+        .iter()
+        .map(|(label, _)| label.chars().count())
+        .chain(std::iter::once(left_header.chars().count()))
+        .max()
+        .unwrap_or(12);
+    let left_width = max_label_width.clamp(12, inner_width.saturating_sub(16).min(22));
+    let right_width = inner_width.saturating_sub(left_width + 3);
+
+    let mut lines = Vec::new();
+    lines.push(border('┌', '┬', '┐', left_width, right_width));
+    lines.push(row(left_header, right_header, left_width, right_width));
+    lines.push(border('├', '┼', '┤', left_width, right_width));
+    for (label, value) in rows {
+        lines.push(row(label, value, left_width, right_width));
+    }
+    lines.push(border('└', '┴', '┘', left_width, right_width));
+    lines.join("\n")
+}
+
+fn row(left: &str, right: &str, left_width: usize, right_width: usize) -> String {
+    format!(
+        "│ {:left$} │ {:right$} │",
+        truncate(left, left_width),
+        truncate(right, right_width),
+        left = left_width,
+        right = right_width
+    )
+}
+
+fn border(
+    left_edge: char,
+    middle_edge: char,
+    right_edge: char,
+    left_width: usize,
+    right_width: usize,
+) -> String {
+    format!(
+        "{left}{}{mid}{}{right}",
+        "─".repeat(left_width + 2),
+        "─".repeat(right_width + 2),
+        left = left_edge,
+        mid = middle_edge,
+        right = right_edge
+    )
+}
+
+fn truncate(value: &str, width: usize) -> String {
+    let count = value.chars().count();
+    if count <= width {
+        return value.to_owned();
+    }
+    if width <= 1 {
+        return "…".to_owned();
     }
 
-    Ok(json!({
-        "rendered": format!(
-            "{}\n{}",
-            styles::accent("Recent Events", options.no_color),
-            table
-        ),
-        "items": serde_json::to_value(events).into_diagnostic()?,
-    }))
+    let mut truncated = value.chars().take(width - 1).collect::<String>();
+    truncated.push('…');
+    truncated
+}
+
+fn join_or_dash(items: &[String]) -> String {
+    if items.is_empty() {
+        "-".to_owned()
+    } else {
+        items.join(", ")
+    }
 }

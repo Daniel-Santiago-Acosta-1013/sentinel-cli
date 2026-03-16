@@ -10,8 +10,8 @@ fn guided_activation_and_disable_round_trip_preserves_state() {
     scripted_command(&home, "enter,down,enter,confirm,enter,confirm,exit", port)
         .assert()
         .success()
-        .stdout(contains("Protection: Active"))
-        .stdout(contains("Protection: Inactive"));
+        .stdout(contains("Proteccion: Activa"))
+        .stdout(contains("Proteccion: Inactiva"));
 
     let state_path = home.path().join("state/state.json");
     let state = std::fs::read_to_string(state_path).expect("state file");

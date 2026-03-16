@@ -8,9 +8,9 @@ fn home_snapshot_stays_clean_and_focused() {
     scripted_command(&home, "exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Sentinel\nProtection: Inactive"))
-        .stdout(contains("Screen: Home"))
-        .stdout(contains("> Run safety checks"));
+        .stdout(contains("Sentinel\nCLI guiada"))
+        .stdout(contains("Pantalla: Inicio"))
+        .stdout(contains("> Ejecutar chequeos de seguridad"));
 }
 
 #[test]
@@ -19,7 +19,7 @@ fn activation_snapshot_exposes_active_state() {
     scripted_command(&home, "enter,down,enter,confirm,exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Screen: Status"))
-        .stdout(contains("Protection: Active"))
-        .stdout(contains("Disable protection"));
+        .stdout(contains("Pantalla: Estado"))
+        .stdout(contains("Proteccion: Activa"))
+        .stdout(contains("Desactivar proteccion"));
 }

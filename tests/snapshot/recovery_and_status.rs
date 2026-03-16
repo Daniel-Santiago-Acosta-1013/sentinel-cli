@@ -8,8 +8,8 @@ fn status_snapshot_surfaces_install_and_runtime_summary() {
     scripted_command(&home, "down,down,enter,exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Screen: Status"))
-        .stdout(contains("Install action: Install"));
+        .stdout(contains("Pantalla: Estado"))
+        .stdout(contains("Accion sugerida"));
 }
 
 #[test]
@@ -21,6 +21,8 @@ fn recovery_snapshot_stays_explicit_and_guided() {
     scripted_command(&home, "down,down,down,down,enter,confirm,exit", port)
         .assert()
         .success()
-        .stdout(contains("Screen: Recovery"))
-        .stdout(contains("Recovery completed"));
+        .stdout(contains("Pantalla: Recuperacion"))
+        .stdout(contains(
+            "La red coincide con el snapshot original capturado por Sentinel.",
+        ));
 }

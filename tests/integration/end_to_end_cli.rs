@@ -26,6 +26,6 @@ fn installed_binary_can_run_the_interactive_flow_end_to_end() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Protection: Active"));
-    assert!(stdout.contains("Protection: Inactive"));
+    assert!(stdout.contains("Proteccion: Activa"));
+    assert!(stdout.contains("Proteccion: Inactiva"));
 }

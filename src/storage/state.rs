@@ -22,10 +22,10 @@ pub enum ProtectionMode {
 impl ProtectionMode {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Inactive => "Inactive",
-            Self::Active => "Active",
-            Self::Degraded => "Degraded",
-            Self::Recovering => "Recovering",
+            Self::Inactive => "Inactiva",
+            Self::Active => "Activa",
+            Self::Degraded => "Degradada",
+            Self::Recovering => "Recuperando",
         }
     }
 }
@@ -42,8 +42,8 @@ impl RiskLevel {
     pub fn label(self) -> &'static str {
         match self {
             Self::Normal => "Normal",
-            Self::Warning => "Warning",
-            Self::Critical => "Critical",
+            Self::Warning => "Advertencia",
+            Self::Critical => "Critico",
         }
     }
 }
@@ -59,9 +59,38 @@ pub enum SafetyStatus {
 impl SafetyStatus {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Pass => "Pass",
-            Self::Warn => "Warn",
-            Self::Fail => "Fail",
+            Self::Pass => "Aprobado",
+            Self::Warn => "Precaucion",
+            Self::Fail => "Fallo",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreVerification {
+    pub checked_at: DateTime<Utc>,
+    pub matches_snapshot: bool,
+    #[serde(default)]
+    pub mismatched_services: Vec<String>,
+    pub summary: String,
+}
+
+impl RestoreVerification {
+    pub fn success(summary: impl Into<String>) -> Self {
+        Self {
+            checked_at: Utc::now(),
+            matches_snapshot: true,
+            mismatched_services: Vec::new(),
+            summary: summary.into(),
+        }
+    }
+
+    pub fn failure(mismatched_services: Vec<String>, summary: impl Into<String>) -> Self {
+        Self {
+            checked_at: Utc::now(),
+            matches_snapshot: false,
+            mismatched_services,
+            summary: summary.into(),
         }
     }
 }
@@ -75,6 +104,10 @@ pub struct SafetyCheckSummary {
     pub recovery_ready: bool,
     pub issues: Vec<String>,
     pub recommended_action: String,
+    #[serde(default)]
+    pub detected_custom_dns: bool,
+    #[serde(default)]
+    pub verification_target: Option<String>,
 }
 
 impl SafetyCheckSummary {
@@ -93,6 +126,8 @@ impl SafetyCheckSummary {
             recovery_ready,
             issues,
             recommended_action: recommended_action.into(),
+            detected_custom_dns: false,
+            verification_target: None,
         }
     }
 
@@ -118,25 +153,30 @@ pub struct RuntimeState {
     pub blocklist_version: String,
     pub blocklist_domain_count: usize,
     pub last_safety_check: Option<SafetyCheckSummary>,
+    #[serde(default)]
+    pub last_verification_result: Option<RestoreVerification>,
 }
 
 impl Default for RuntimeState {
     fn default() -> Self {
         Self {
             mode: ProtectionMode::Inactive,
-            status_summary: "Protection is inactive. Run safety checks before enabling."
-                .to_owned(),
+            status_summary:
+                "La proteccion esta inactiva. Ejecuta chequeos antes de cambiar la red."
+                    .to_owned(),
             risk_level: RiskLevel::Normal,
             last_message: Some(
-                "Sentinel is ready to inspect safety and activate protection.".to_owned(),
+                "Sentinel esta listo para inspeccionar seguridad y activar proteccion."
+                    .to_owned(),
             ),
             runtime_pid: None,
             runtime_addr: None,
             snapshot_id: None,
             last_transition_at: Utc::now(),
-            blocklist_version: "unloaded".to_owned(),
+            blocklist_version: "sin_cargar".to_owned(),
             blocklist_domain_count: 0,
             last_safety_check: None,
+            last_verification_result: None,
         }
     }
 }

@@ -1,10 +1,10 @@
 mod app;
 mod blocking;
+mod cli;
 mod control;
 mod install;
 mod platform;
 mod storage;
-mod tui;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {

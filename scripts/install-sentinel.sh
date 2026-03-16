@@ -18,6 +18,13 @@ read_version() {
   SENTINEL_INTERNAL_MODE=print-version "$1" 2>/dev/null || return 1
 }
 
+read_sha() {
+  if [ ! -e "$1" ]; then
+    return 1
+  fi
+  shasum -a 256 "$1" | awk '{ print $1 }'
+}
+
 detect_action() {
   if [ "${SENTINEL_REINSTALL:-0}" = "1" ]; then
     echo "reinstall"
@@ -33,7 +40,13 @@ detect_action() {
   if [ -z "$CURRENT_VERSION" ]; then
     echo "reinstall"
   elif [ "$CURRENT_VERSION" = "$TARGET_VERSION" ]; then
-    echo "none"
+    CURRENT_SHA=$(read_sha "$TARGET_BIN" || true)
+    SOURCE_SHA=$(read_sha "$SOURCE_BIN" || true)
+    if [ -n "$CURRENT_SHA" ] && [ -n "$SOURCE_SHA" ] && [ "$CURRENT_SHA" != "$SOURCE_SHA" ]; then
+      echo "reinstall"
+    else
+      echo "none"
+    fi
   else
     echo "update"
   fi
@@ -49,13 +62,13 @@ ensure_source() {
   SOURCE_BIN="$REPO_ROOT/target/release/sentinel"
 }
 
+ensure_source
+
 ACTION=$(detect_action)
 if [ "$ACTION" = "none" ]; then
   echo "Sentinel $TARGET_VERSION is already installed at $TARGET_BIN"
   exit 0
 fi
-
-ensure_source
 
 if [ ! -x "$SOURCE_BIN" ]; then
   echo "The installation source is not executable: $SOURCE_BIN" >&2

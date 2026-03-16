@@ -1,6 +1,6 @@
 use predicates::str::contains;
 
-use crate::support::{next_port, scripted_command, temp_home};
+use crate::support::{next_port, scripted_command, seed_fake_network, temp_home};
 
 #[test]
 fn safety_failure_prevents_enable_when_dns_port_is_busy() {
@@ -11,6 +11,18 @@ fn safety_failure_prevents_enable_when_dns_port_is_busy() {
     command
         .assert()
         .success()
-        .stdout(contains("The local DNS port"))
-        .stdout(contains("Protection: Degraded"));
+        .stdout(contains("El puerto DNS local"))
+        .stdout(contains("Proteccion: Degradada"));
+}
+
+#[test]
+fn safety_checks_warn_when_custom_dns_must_be_preserved() {
+    let home = temp_home();
+    seed_fake_network(&home, &[("Wi-Fi", &["1.1.1.1"]), ("Ethernet", &["8.8.8.8"])]);
+
+    scripted_command(&home, "enter,exit", next_port())
+        .assert()
+        .success()
+        .stdout(contains("Se detectaron DNS personalizados"))
+        .stdout(contains("Precaucion"));
 }
