@@ -37,10 +37,16 @@ impl<'a> SafetyController<'a> {
         let addr = self.paths.runtime_addr()?;
         let simulated_busy =
             std::env::var("SENTINEL_SIMULATE_BUSY_PORT").ok().as_deref() == Some("1");
-        let runtime_busy = simulated_busy
+        let runtime_conflict = simulated_busy
             || (!manager.is_fake_mode()
                 && !runtime::port_available(addr)
                 && !state.runtime_pid.is_some_and(runtime::process_alive));
+        let runtime_reclaimed = if runtime_conflict {
+            runtime::reclaim_sentinel_port(addr, state.runtime_pid)?
+        } else {
+            false
+        };
+        let runtime_busy = runtime_conflict && !runtime_reclaimed;
         if runtime_busy {
             issues.push(format!(
                 "El puerto DNS local {} ya esta en uso por otro proceso.",
@@ -74,8 +80,21 @@ impl<'a> SafetyController<'a> {
                     .to_owned()
             }
             SafetyStatus::Fail => {
-                "Los chequeos fallaron. Corrige el problema o recupera la red antes de cambiarla."
-                    .to_owned()
+                if runtime_busy {
+                    format!(
+                        "Libera el puerto DNS local {} o deten el proceso que lo usa antes de activar Sentinel.",
+                        addr.port()
+                    )
+                } else if services.is_empty() {
+                    "No hay servicios de red activos. Conecta la red y vuelve a ejecutar el chequeo."
+                        .to_owned()
+                } else if !self.blocklist.integrity_state {
+                    "El bloqueador no paso la validacion de integridad. Reinstala Sentinel o actualiza sus archivos antes de continuar."
+                        .to_owned()
+                } else {
+                    "Corrige el problema detectado o recupera la red antes de cambiarla."
+                        .to_owned()
+                }
             }
         };
 

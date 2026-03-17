@@ -86,10 +86,11 @@ pub fn render_safety_table(
             rows.push(("Accion sugerida", summary.recommended_action.clone()));
         }
     } else {
-        rows.push(("Estado", "Sin ejecutar".to_owned()));
+        rows.push(("Estado", "Pendiente".to_owned()));
         rows.push((
             "Accion sugerida",
-            "Ejecuta chequeos antes de cambiar la red".to_owned(),
+            "Activa Sentinel; la validacion de seguridad se ejecuta automaticamente."
+                .to_owned(),
         ));
     }
     render_table("Chequeo", "Resultado", &rows, terminal_width, profile)
@@ -131,10 +132,11 @@ pub fn render_log_panel_stream(
 ) -> String {
     let width = terminal_width.saturating_sub(10).clamp(40, 84);
     let mut body_lines = Vec::new();
-    if events.is_empty() {
+    let display_events = filter_display_events(events);
+    if display_events.is_empty() {
         body_lines.push(empty_copy.to_owned());
     } else {
-        for (index, event) in events.iter().take(8).enumerate() {
+        for (index, event) in display_events.iter().take(8).enumerate() {
             if index > 0 {
                 body_lines.push(String::new());
             }
@@ -257,7 +259,7 @@ fn render_event_entry(event: &EventRecord, width: usize) -> Vec<String> {
         event.severity.label().to_uppercase(),
         event.kind.label()
     )];
-    for line in wrap_text(&event.message, width) {
+    for line in wrap_text(&sanitize_event_message(event), width) {
         lines.push(format!("  {line}"));
     }
     lines
@@ -316,4 +318,46 @@ fn render_log_panel(lines: &[String], width: usize, profile: StyleProfile) -> St
         horiz.to_string().repeat(width + 2)
     ));
     rendered.join("\n")
+}
+
+fn filter_display_events(events: &[EventRecord]) -> Vec<EventRecord> {
+    events
+        .iter()
+        .filter_map(|event| {
+            let message = sanitize_event_message(event);
+            if message.is_empty() {
+                None
+            } else {
+                let mut cloned = event.clone();
+                cloned.message = message;
+                Some(cloned)
+            }
+        })
+        .collect()
+}
+
+fn sanitize_event_message(event: &EventRecord) -> String {
+    let trimmed = event.message.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let exact = trimmed.split(" | Siguiente paso:").next().unwrap_or(trimmed).trim();
+
+    if matches!(event.kind, crate::storage::events::EventKind::SafetyCheck)
+        && is_generic_safety_message(exact)
+    {
+        return String::new();
+    }
+
+    exact.to_owned()
+}
+
+fn is_generic_safety_message(message: &str) -> bool {
+    matches!(
+        message,
+        "Los chequeos fallaron. Corrige el problema o recupera la red antes de cambiarla."
+            | "Los chequeos aprobaron. Puedes activar la proteccion de forma segura."
+            | "Los chequeos aprobaron con precauciones. Revisa la nota antes de confirmar."
+    )
 }

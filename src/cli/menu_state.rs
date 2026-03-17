@@ -51,7 +51,7 @@ impl MenuSession {
         runtime_state.refresh_bundle(blocklist);
         let route = default_route(runtime_state.mode);
         let last_message = runtime_state.last_message.clone().unwrap_or_else(|| {
-            "Sentinel esta listo para revisar seguridad, ver el estado o cambiar la proteccion."
+            "Sentinel esta listo para activarse, ver su estado o recuperar la red."
                 .to_owned()
         });
         Self {
@@ -73,17 +73,6 @@ impl MenuSession {
     pub fn actions(&self) -> Vec<MenuAction> {
         match self.route {
             Route::Home => vec![
-                action(
-                    MenuActionId::RunSafetyChecks,
-                    copy::action_label(
-                        MenuActionId::RunSafetyChecks,
-                        self.runtime_state.mode,
-                    ),
-                    copy::action_description(
-                        MenuActionId::RunSafetyChecks,
-                        self.runtime_state.mode,
-                    ),
-                ),
                 action(
                     MenuActionId::ToggleProtection,
                     copy::action_label(
@@ -364,11 +353,11 @@ fn normalize_copy(input: &str) -> String {
                 .to_owned()
         }
         "Sentinel is ready to inspect safety and activate protection." => {
-            "Sentinel esta listo para inspeccionar seguridad y activar proteccion."
+            "Sentinel esta listo para activarse, ver su estado o recuperar la red."
                 .to_owned()
         }
         "Protection is inactive. Run checks before changing the network." => {
-            "La proteccion esta inactiva. Ejecuta chequeos antes de cambiar la red."
+            "La proteccion esta inactiva. Puedes activar Sentinel cuando lo necesites."
                 .to_owned()
         }
         other => other.to_owned(),

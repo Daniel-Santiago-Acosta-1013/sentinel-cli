@@ -61,7 +61,7 @@ impl SafetyStatus {
         match self {
             Self::Pass => "Aprobado",
             Self::Warn => "Precaucion",
-            Self::Fail => "Fallo",
+            Self::Fail => "Bloqueado",
         }
     }
 }
@@ -162,11 +162,11 @@ impl Default for RuntimeState {
         Self {
             mode: ProtectionMode::Inactive,
             status_summary:
-                "La proteccion esta inactiva. Ejecuta chequeos antes de cambiar la red."
+                "La proteccion esta inactiva. Puedes activar Sentinel cuando lo necesites."
                     .to_owned(),
             risk_level: RiskLevel::Normal,
             last_message: Some(
-                "Sentinel esta listo para inspeccionar seguridad y activar proteccion."
+                "Sentinel esta listo para activarse, ver su estado o recuperar la red."
                     .to_owned(),
             ),
             runtime_pid: None,

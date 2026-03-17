@@ -28,7 +28,6 @@ pub enum Route {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuActionId {
-    RunSafetyChecks,
     ToggleProtection,
     ViewStatus,
     ViewLogs,

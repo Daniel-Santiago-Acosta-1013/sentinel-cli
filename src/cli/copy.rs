@@ -67,7 +67,6 @@ pub fn footer_hint(route: Route) -> &'static str {
 
 pub fn action_label(action: MenuActionId, mode: ProtectionMode) -> String {
     match action {
-        MenuActionId::RunSafetyChecks => "Ejecutar chequeos de seguridad".to_owned(),
         MenuActionId::ToggleProtection => {
             if mode == ProtectionMode::Active {
                 "Desactivar Sentinel".to_owned()
@@ -88,10 +87,6 @@ pub fn action_label(action: MenuActionId, mode: ProtectionMode) -> String {
 
 pub fn action_description(action: MenuActionId, mode: ProtectionMode) -> String {
     match action {
-        MenuActionId::RunSafetyChecks => {
-            "Valida conectividad, snapshot recuperable y condiciones previas antes de tocar la red."
-                .to_owned()
-        }
         MenuActionId::ToggleProtection if mode == ProtectionMode::Active => {
             "Restaura la configuracion original y detiene Sentinel."
                 .to_owned()

@@ -21,10 +21,7 @@ use crate::{
         parse_script, renderer,
         terminal::TerminalSession,
     },
-    control::{
-        activation::ActivationController, recovery::RecoveryController,
-        safety::SafetyController,
-    },
+    control::{activation::ActivationController, recovery::RecoveryController},
     install::version,
     storage::{
         config::ConfigStore,
@@ -307,10 +304,6 @@ impl SentinelApp {
         action: MenuActionId,
     ) -> AppResult<bool> {
         match action {
-            MenuActionId::RunSafetyChecks => {
-                self.run_safety_checks(session)?;
-                Ok(false)
-            }
             MenuActionId::ToggleProtection => {
                 session.route = Route::Confirm(session.toggle_confirmation_action());
                 session.selected_index = 0;
@@ -397,12 +390,7 @@ impl SentinelApp {
         }
 
         match session.route {
-            Route::Home => match session.selected_action_id() {
-                Some(MenuActionId::RunSafetyChecks) => {
-                    Some("Ejecutando chequeos de seguridad...".to_owned())
-                }
-                _ => None,
-            },
+            Route::Home => None,
             Route::Confirm(ConfirmationAction::EnableProtection) => {
                 Some("Activando Sentinel y preparando snapshot recuperable...".to_owned())
             }
@@ -414,42 +402,6 @@ impl SentinelApp {
             }
             _ => None,
         }
-    }
-
-    fn run_safety_checks(&self, session: &mut MenuSession) -> AppResult<()> {
-        let state = self.state_store.load()?;
-        let summary =
-            SafetyController::new(&self.paths, &self.blocklist).run_checks(&state)?;
-        let mut next_state = state;
-        next_state.last_safety_check = Some(summary.clone());
-        next_state.risk_level = summary.risk_level();
-        next_state.status_summary = summary.recommended_action.clone();
-        next_state.last_message = Some(if summary.issues.is_empty() {
-            "Los chequeos terminaron sin alertas bloqueantes.".to_owned()
-        } else {
-            summary.issues.join(" | ")
-        });
-        next_state.refresh_bundle(&self.blocklist);
-        self.state_store.save(&next_state)?;
-        self.event_store.record_safety(&summary)?;
-
-        session.sync_runtime_state(next_state);
-        self.refresh_recent_events(session)?;
-        session.route = if matches!(
-            session.runtime_state.mode,
-            ProtectionMode::Degraded | ProtectionMode::Recovering
-        ) {
-            Route::Recovery
-        } else {
-            Route::Safety
-        };
-        session.selected_index = 0;
-        session.last_message = session
-            .runtime_state
-            .last_message
-            .clone()
-            .unwrap_or_else(|| session.status_summary.clone());
-        Ok(())
     }
 
     async fn enable_protection(&self, session: &mut MenuSession) -> AppResult<()> {

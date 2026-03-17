@@ -37,7 +37,7 @@ fn degraded_runtime_is_visible_in_status_screen() {
     std::fs::write(&state_path, serde_json::to_string_pretty(&state).expect("serialize"))
         .expect("write state");
 
-    scripted_command(&home, "down,down,enter,exit", port)
+    scripted_command(&home, "down,enter,exit", port)
         .assert()
         .success()
         .stdout(contains("◆ Estado de Sentinel"))

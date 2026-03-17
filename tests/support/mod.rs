@@ -43,15 +43,15 @@ pub fn scripted_command_with_env(
 }
 
 pub fn activation_script() -> &'static str {
-    "down,enter,enter,enter,exit"
+    "enter,enter,enter,exit"
 }
 
 pub fn round_trip_activation_script() -> &'static str {
-    "down,enter,enter,enter,down,enter,enter,enter,exit"
+    "enter,enter,enter,enter,enter,enter,exit"
 }
 
 pub fn recovery_script() -> &'static str {
-    "down,down,down,enter,enter,enter,exit"
+    "down,down,enter,enter,enter,exit"
 }
 
 pub fn install_command(install_dir: &Path, source_bin: &Path) -> Command {

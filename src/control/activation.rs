@@ -44,6 +44,7 @@ impl<'a> ActivationController<'a> {
 
         let safety =
             SafetyController::new(self.paths, self.blocklist).run_checks(&state)?;
+        self.event_store.record_safety(&safety)?;
         if !safety.connectivity_ready || !safety.recovery_ready {
             state.mode = ProtectionMode::Degraded;
             state.risk_level = RiskLevel::Critical;

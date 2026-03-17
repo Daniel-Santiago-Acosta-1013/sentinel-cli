@@ -12,16 +12,17 @@ fn home_snapshot_stays_clean_and_focused() {
         .stdout(contains("◆ Inicio"))
         .stdout(contains("Elige una accion principal").not())
         .stdout(contains("Campo").not())
-        .stdout(contains("› Ejecutar chequeos de seguridad"));
+        .stdout(contains("Ejecutar chequeos de seguridad").not())
+        .stdout(contains("› Activar Sentinel"));
 }
 
 #[test]
 fn activation_snapshot_exposes_active_state() {
     let home = temp_home();
-    scripted_command(&home, "down,enter,enter,enter,exit", next_port())
+    scripted_command(&home, "enter,enter,enter,exit", next_port())
         .assert()
         .success()
-        .stdout(contains("◆ Proteccion activada"))
+        .stdout(contains("◆ Sentinel activado"))
         .stdout(contains("Proteccion: Activa"))
         .stdout(contains("Volver al inicio"));
 }
