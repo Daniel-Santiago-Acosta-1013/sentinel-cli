@@ -26,10 +26,10 @@ cargo test [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECH
 Rust 1.90.0 (edition 2024): Follow standard conventions
 
 ## Recent Changes
+- 006-menu-cli-redesign: Added Rust 1.90.0 (edition 2024) + `crossterm`, `comfy-table`, `tokio`, `serde`,
 - 004-menu-cli-network-safety: Added Rust 1.90.0 (edition 2024) + `crossterm`, `comfy-table`, `tokio`, `serde`, `serde_json`, `toml`, `miette`, `thiserror`, `tracing`, `tracing-subscriber`, `directories`, `uuid`, `chrono`, `hickory-proto`
 - 003-interactive-cli-installer: Added Rust 1.90.0 (edition 2024) plus POSIX shell for installation workflows + `ratatui`, `crossterm`, `tokio`, `hickory-proto`, `serde`, `serde_json`, `toml`, `miette`, `thiserror`, `tracing`, `tracing-subscriber`, `directories`, `uuid`, shell tooling via `sh`, `curl`, `tar`, and `shasum`
 
-- 002-build-cli-mvp: Added Rust 1.90.0 (edition 2024) + `clap`, `tokio`, `tun`, `hickory-proto`, `serde`, `serde_json`, `toml`, `miette`, `thiserror`, `tracing`, `tracing-subscriber`, `comfy-table`, `directories`
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

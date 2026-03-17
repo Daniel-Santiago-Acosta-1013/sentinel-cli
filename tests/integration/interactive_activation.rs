@@ -1,13 +1,13 @@
 use predicates::str::contains;
 
-use crate::support::{next_port, scripted_command, temp_home};
+use crate::support::{next_port, round_trip_activation_script, scripted_command, temp_home};
 
 #[test]
 fn guided_activation_and_disable_round_trip_preserves_state() {
     let home = temp_home();
     let port = next_port();
 
-    scripted_command(&home, "enter,down,enter,confirm,enter,confirm,exit", port)
+    scripted_command(&home, round_trip_activation_script(), port)
         .assert()
         .success()
         .stdout(contains("Proteccion: Activa"))

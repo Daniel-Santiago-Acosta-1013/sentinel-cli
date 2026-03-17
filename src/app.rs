@@ -14,7 +14,8 @@ use crate::{
     blocking::{blocklist::BlocklistBundle, runtime},
     cli::{
         InputEvent,
-        menu_state::{ActionId, ConfirmationAction, MenuSession, ViewId},
+        menu_state::MenuSession,
+        navigation::{ConfirmationAction, MenuActionId, ResultTone, Route, default_route},
         parse_script, renderer,
         terminal::TerminalSession,
     },
@@ -27,7 +28,7 @@ use crate::{
         config::ConfigStore,
         events::EventStore,
         install::InstallStore,
-        state::{ProtectionMode, StateStore},
+        state::{ProtectionMode, RiskLevel, StateStore},
     },
 };
 
@@ -168,6 +169,10 @@ impl SentinelApp {
         let mut session = self.load_session(true)?;
         let mut transcript = vec![renderer::render_snapshot(&session)];
         for event in parse_script(&script)? {
+            if let Some(progress) = self.progress_label_for_input(&session, event) {
+                transcript.push(renderer::render_progress_preview(&session, 100, &progress));
+            }
+
             let should_exit = self.handle_input(&mut session, event).await?;
             transcript.push(renderer::render_snapshot(&session));
             if should_exit {
@@ -181,12 +186,22 @@ impl SentinelApp {
 
     async fn run_terminal(self) -> AppResult<()> {
         let mut terminal = TerminalSession::start()?;
+        let capabilities = terminal.capabilities();
+        let _color_enabled = capabilities.color;
+        let _unicode_enabled = capabilities.unicode;
         let mut session = self.load_session(false)?;
 
         loop {
             let frame = renderer::render(&session, terminal.width());
             terminal.draw(&frame)?;
             let input = terminal.read_input()?;
+
+            if let Some(progress) = self.progress_label_for_input(&session, input) {
+                let progress_frame =
+                    renderer::render_progress_preview(&session, terminal.width(), &progress);
+                terminal.draw(&progress_frame)?;
+            }
+
             let should_exit = self.handle_input(&mut session, input).await?;
             if should_exit {
                 let frame = renderer::render(&session, terminal.width());
@@ -214,83 +229,106 @@ impl SentinelApp {
         session: &mut MenuSession,
         input: InputEvent,
     ) -> AppResult<bool> {
-        if let Some(pending) = session.pending_confirmation {
-            return self.handle_confirmation(session, pending, input).await;
-        }
-
         match input {
-            InputEvent::Confirm => {
-                let action = session.selected_action_id();
-                match action {
-                    ActionId::RunSafetyChecks => self.run_safety_checks(session)?,
-                    ActionId::ToggleProtection => {
-                        session.pending_confirmation =
-                            Some(session.toggle_confirmation_action());
-                        session.view = ViewId::Confirmacion;
-                    }
-                    ActionId::ViewStatus => self.refresh_status(session)?,
-                    ActionId::ViewInstallState => self.show_install_state(session)?,
-                    ActionId::RecoverNetwork => {
-                        session.pending_confirmation =
-                            Some(ConfirmationAction::RecoverNetwork);
-                        session.view = ViewId::Confirmacion;
-                    }
-                    ActionId::Exit => {
-                        session.view = ViewId::Salida;
-                        session.last_message =
-                            "Sesion cerrada sin acumular texto ni dejar cambios pendientes."
-                                .to_owned();
-                        return Ok(true);
-                    }
-                }
-            }
             InputEvent::Up => session.select_previous(),
             InputEvent::Down => session.select_next(),
-            InputEvent::Back => {
-                session.view = if matches!(
-                    session.runtime_state.mode,
-                    ProtectionMode::Degraded | ProtectionMode::Recovering
-                ) {
-                    ViewId::Recuperacion
-                } else {
-                    ViewId::Inicio
-                };
-            }
-            InputEvent::Exit => {
-                session.view = ViewId::Salida;
-                session.last_message =
-                    "Sesion cerrada sin acumular texto ni dejar cambios pendientes."
-                        .to_owned();
-                return Ok(true);
+            InputEvent::Back => self.handle_back(session),
+            InputEvent::Exit => return self.exit_session(session),
+            InputEvent::Confirm => {
+                if let Some(action) = session.selected_action_id() {
+                    return self.execute_action(session, action).await;
+                }
             }
         }
+
         Ok(false)
     }
 
-    async fn handle_confirmation(
-        &self,
-        session: &mut MenuSession,
-        pending: ConfirmationAction,
-        input: InputEvent,
-    ) -> AppResult<bool> {
-        match input {
-            InputEvent::Back | InputEvent::Exit => {
-                session.pending_confirmation = None;
-                session.view = if matches!(
-                    session.runtime_state.mode,
-                    ProtectionMode::Degraded | ProtectionMode::Recovering
-                ) {
-                    ViewId::Recuperacion
-                } else {
-                    ViewId::Inicio
-                };
+    fn handle_back(&self, session: &mut MenuSession) {
+        match session.route {
+            Route::Home => {}
+            Route::Recovery => {
+                session.route = Route::Home;
+                session.selected_index = 0;
+                session.last_message =
+                    "Volviste al inicio para elegir otra accion con una pantalla limpia."
+                        .to_owned();
+            }
+            Route::Confirm(_) => {
+                session.route = back_route_for(session.runtime_state.mode);
+                session.selected_index = 0;
                 session.last_message =
                     "La accion sensible fue cancelada antes de cambiar la red."
                         .to_owned();
-                Ok(matches!(input, InputEvent::Exit))
             }
-            InputEvent::Confirm => {
-                session.pending_confirmation = None;
+            Route::Result | Route::Safety | Route::Status | Route::Installation => {
+                session.route = Route::Home;
+                session.selected_index = 0;
+                session.last_result = None;
+                session.last_message =
+                    "Volviste al inicio para ejecutar otra accion.".to_owned();
+            }
+            Route::Progress | Route::Exit => {}
+        }
+    }
+
+    fn exit_session(&self, session: &mut MenuSession) -> AppResult<bool> {
+        session.route = Route::Exit;
+        session.selected_index = 0;
+        session.last_result = None;
+        session.last_message =
+            "Sesion cerrada sin acumular texto ni dejar cambios pendientes.".to_owned();
+        Ok(true)
+    }
+
+    async fn execute_action(
+        &self,
+        session: &mut MenuSession,
+        action: MenuActionId,
+    ) -> AppResult<bool> {
+        match action {
+            MenuActionId::RunSafetyChecks => {
+                self.run_safety_checks(session)?;
+                Ok(false)
+            }
+            MenuActionId::ToggleProtection => {
+                session.route = Route::Confirm(session.toggle_confirmation_action());
+                session.selected_index = 0;
+                session.last_message =
+                    "Confirma la accion solo si deseas aplicar el cambio de red."
+                        .to_owned();
+                Ok(false)
+            }
+            MenuActionId::ViewStatus => {
+                self.refresh_status(session)?;
+                Ok(false)
+            }
+            MenuActionId::ViewInstallState => {
+                self.show_install_state(session)?;
+                Ok(false)
+            }
+            MenuActionId::RecoverNetwork => {
+                session.route = Route::Confirm(ConfirmationAction::RecoverNetwork);
+                session.selected_index = 0;
+                session.last_message =
+                    "Sentinel puede restaurar la red y validar el resultado antes de volver al inicio."
+                        .to_owned();
+                Ok(false)
+            }
+            MenuActionId::BackHome => {
+                session.route = Route::Home;
+                session.selected_index = 0;
+                session.last_result = None;
+                session.last_message =
+                    "Volviste al inicio para revisar otra vista o accion.".to_owned();
+                Ok(false)
+            }
+            MenuActionId::Exit => self.exit_session(session),
+            MenuActionId::Confirm => {
+                let pending = match session.route {
+                    Route::Confirm(action) => action,
+                    _ => return Ok(false),
+                };
                 match pending {
                     ConfirmationAction::EnableProtection => {
                         self.enable_protection(session).await?
@@ -304,7 +342,43 @@ impl SentinelApp {
                 }
                 Ok(false)
             }
-            InputEvent::Up | InputEvent::Down => Ok(false),
+            MenuActionId::Cancel => {
+                session.route = back_route_for(session.runtime_state.mode);
+                session.selected_index = 0;
+                session.last_message =
+                    "La accion sensible fue cancelada antes de cambiar la red."
+                        .to_owned();
+                Ok(false)
+            }
+        }
+    }
+
+    fn progress_label_for_input(
+        &self,
+        session: &MenuSession,
+        input: InputEvent,
+    ) -> Option<String> {
+        if input != InputEvent::Confirm {
+            return None;
+        }
+
+        match session.route {
+            Route::Home => match session.selected_action_id() {
+                Some(MenuActionId::RunSafetyChecks) => {
+                    Some("Ejecutando chequeos de seguridad...".to_owned())
+                }
+                _ => None,
+            },
+            Route::Confirm(ConfirmationAction::EnableProtection) => {
+                Some("Activando proteccion y preparando snapshot recuperable...".to_owned())
+            }
+            Route::Confirm(ConfirmationAction::DisableProtection) => {
+                Some("Desactivando proteccion y restaurando la red...".to_owned())
+            }
+            Route::Confirm(ConfirmationAction::RecoverNetwork) => {
+                Some("Recuperando la red y verificando el resultado...".to_owned())
+            }
+            _ => None,
         }
     }
 
@@ -324,8 +398,17 @@ impl SentinelApp {
         next_state.refresh_bundle(&self.blocklist);
         self.state_store.save(&next_state)?;
         self.event_store.record_safety(&summary)?;
+
         session.sync_runtime_state(next_state);
-        session.view = ViewId::Seguridad;
+        session.route = if matches!(
+            session.runtime_state.mode,
+            ProtectionMode::Degraded | ProtectionMode::Recovering
+        ) {
+            Route::Recovery
+        } else {
+            Route::Safety
+        };
+        session.selected_index = 0;
         session.last_message = session
             .runtime_state
             .last_message
@@ -344,18 +427,25 @@ impl SentinelApp {
         );
         let next_state = controller.enable().await?;
         session.sync_runtime_state(next_state);
+
         if session.runtime_state.mode == ProtectionMode::Active {
-            session.view = ViewId::Estado;
-            session.last_message =
-                "Proteccion activada con snapshot recuperable y runtime DNS local."
-                    .to_owned();
+            session.show_result(
+                "Proteccion activada",
+                "Sentinel activo la proteccion con un resultado visible y una ruta clara para continuar.",
+                "Pulsa Enter para volver al inicio o baja a Salir.",
+                ResultTone::Success,
+            );
         } else {
-            session.view = ViewId::Seguridad;
-            session.last_message = session
-                .runtime_state
-                .last_message
-                .clone()
-                .unwrap_or_else(|| session.status_summary.clone());
+            session.show_result(
+                "Activacion con advertencias",
+                session
+                    .runtime_state
+                    .last_message
+                    .clone()
+                    .unwrap_or_else(|| session.status_summary.clone()),
+                "Revisa el estado o ejecuta recuperacion desde el inicio antes de seguir.",
+                ResultTone::Warning,
+            );
         }
         Ok(())
     }
@@ -370,19 +460,30 @@ impl SentinelApp {
         );
         let next_state = controller.disable().await?;
         session.sync_runtime_state(next_state);
-        session.view = if matches!(
+
+        let tone = if matches!(
             session.runtime_state.mode,
             ProtectionMode::Degraded | ProtectionMode::Recovering
         ) {
-            ViewId::Recuperacion
+            ResultTone::Warning
         } else {
-            ViewId::Estado
+            ResultTone::Success
         };
-        session.last_message = session
-            .runtime_state
-            .last_message
-            .clone()
-            .unwrap_or_else(|| session.status_summary.clone());
+        let title = if tone == ResultTone::Success {
+            "Proteccion desactivada"
+        } else {
+            "Desactivacion con advertencias"
+        };
+        session.show_result(
+            title,
+            session
+                .runtime_state
+                .last_message
+                .clone()
+                .unwrap_or_else(|| session.status_summary.clone()),
+            "Vuelve al inicio para revisar el estado o salir con una pantalla limpia.",
+            tone,
+        );
         Ok(())
     }
 
@@ -395,11 +496,27 @@ impl SentinelApp {
         );
         let next_state = controller.recover().await?;
         session.sync_runtime_state(next_state);
-        session.view = ViewId::Recuperacion;
-        session.last_message =
+
+        let (title, tone) = match session.runtime_state.last_verification_result.as_ref() {
+            Some(verification) if verification.matches_snapshot => {
+                ("Recuperacion completada", ResultTone::Success)
+            }
+            Some(_) => ("Recuperacion con advertencias", ResultTone::Warning),
+            None if session.runtime_state.risk_level == RiskLevel::Critical => {
+                ("Recuperacion con advertencias", ResultTone::Warning)
+            }
+            None => ("Recuperacion completada", ResultTone::Success),
+        };
+
+        session.show_result(
+            title,
             session.runtime_state.last_message.clone().unwrap_or_else(|| {
-                "La recuperacion termino y Sentinel verifico el estado de red.".to_owned()
-            });
+                "La recuperacion termino y Sentinel verifico el estado de red."
+                    .to_owned()
+            }),
+            "Pulsa Enter para volver al inicio o revisa el estado antes de salir.",
+            tone,
+        );
         Ok(())
     }
 
@@ -426,7 +543,9 @@ impl SentinelApp {
         let install = self.install_store.inspect_current()?;
         session.sync_runtime_state(state);
         session.install_state = install;
-        session.view = ViewId::Estado;
+        session.route = Route::Status;
+        session.selected_index = 0;
+        session.last_result = None;
         session.last_message =
             "Estado actualizado desde el runtime persistido, seguridad e instalacion."
                 .to_owned();
@@ -436,11 +555,21 @@ impl SentinelApp {
     fn show_install_state(&self, session: &mut MenuSession) -> AppResult<()> {
         let install = self.install_store.inspect_current()?;
         session.install_state = install;
-        session.view = ViewId::Instalacion;
+        session.route = Route::Installation;
+        session.selected_index = 0;
+        session.last_result = None;
         session.last_message =
             "Estado de instalacion cargado. Usa el script oficial para instalar o actualizar."
                 .to_owned();
         Ok(())
+    }
+}
+
+fn back_route_for(mode: ProtectionMode) -> Route {
+    if matches!(mode, ProtectionMode::Degraded | ProtectionMode::Recovering) {
+        Route::Recovery
+    } else {
+        default_route(mode)
     }
 }
 

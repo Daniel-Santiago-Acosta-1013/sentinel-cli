@@ -6,13 +6,13 @@ use crate::support::{next_port, scripted_command, seed_fake_network, temp_home};
 fn safety_failure_prevents_enable_when_dns_port_is_busy() {
     let home = temp_home();
     let port = next_port();
-    let mut command = scripted_command(&home, "enter,down,enter,confirm,exit", port);
+    let mut command = scripted_command(&home, "down,enter,enter,enter,exit", port);
     command.env("SENTINEL_SIMULATE_BUSY_PORT", "1");
     command
         .assert()
         .success()
         .stdout(contains("El puerto DNS local"))
-        .stdout(contains("Proteccion: Degradada"));
+        .stdout(contains("Degradada"));
 }
 
 #[test]

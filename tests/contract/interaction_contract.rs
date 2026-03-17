@@ -8,8 +8,9 @@ fn starts_from_home_screen_without_flags() {
     scripted_command(&home, "exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Pantalla: Inicio"))
-        .stdout(contains("Ejecutar chequeos de seguridad"))
+        .stdout(contains("____"))
+        .stdout(contains("◆ Inicio"))
+        .stdout(contains("Activar proteccion"))
         .stdout(contains("Salir de Sentinel"));
 }
 
@@ -19,7 +20,7 @@ fn risky_actions_require_explicit_confirmation() {
     scripted_command(&home, "down,enter,back,exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Pantalla: Confirmacion"))
+        .stdout(contains("◆ Confirmacion"))
         .stdout(contains("La accion sensible fue cancelada antes de cambiar la red."));
 }
 
@@ -27,11 +28,12 @@ fn risky_actions_require_explicit_confirmation() {
 fn unsafe_activation_is_blocked_when_safety_fails() {
     let home = temp_home();
     let port = next_port();
-    let mut command = scripted_command(&home, "enter,down,enter,confirm,exit", port);
+    let mut command = scripted_command(&home, "down,enter,enter,enter,exit", port);
     command.env("SENTINEL_SIMULATE_BUSY_PORT", "1");
     command
         .assert()
         .success()
+        .stdout(contains("Activacion con advertencias"))
         .stdout(contains("Proteccion: Degradada"))
-        .stdout(contains("Los chequeos fallaron"));
+        .stdout(contains("ya esta en uso por otro proceso"));
 }

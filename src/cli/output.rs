@@ -1,10 +1,13 @@
 use crate::storage::{install::InstallationState, state::RuntimeState};
 
+use super::styles::StyleProfile;
+
 pub fn render_summary_table(
     runtime: &RuntimeState,
     next_action: &str,
     terminal_width: usize,
     compact: bool,
+    profile: StyleProfile,
 ) -> String {
     let mut rows = vec![
         ("Proteccion", runtime.mode.label().to_owned()),
@@ -25,7 +28,7 @@ pub fn render_summary_table(
             runtime.blocklist_version.clone(),
         ));
     }
-    render_table("Campo", "Valor", &rows, terminal_width)
+    render_table("Campo", "Valor", &rows, terminal_width, profile)
 }
 
 pub fn render_status_table(
@@ -33,6 +36,7 @@ pub fn render_status_table(
     install: &InstallationState,
     terminal_width: usize,
     compact: bool,
+    profile: StyleProfile,
 ) -> String {
     let mut rows = vec![
         ("Proteccion", runtime.mode.label().to_owned()),
@@ -72,13 +76,14 @@ pub fn render_status_table(
         ));
         rows.push(("Accion sugerida", install.action.label().to_owned()));
     }
-    render_table("Estado", "Valor", &rows, terminal_width)
+    render_table("Estado", "Valor", &rows, terminal_width, profile)
 }
 
 pub fn render_safety_table(
     runtime: &RuntimeState,
     terminal_width: usize,
     compact: bool,
+    profile: StyleProfile,
 ) -> String {
     let mut rows = Vec::new();
     if let Some(summary) = runtime.last_safety_check.as_ref() {
@@ -105,13 +110,14 @@ pub fn render_safety_table(
             "Ejecuta chequeos antes de cambiar la red".to_owned(),
         ));
     }
-    render_table("Chequeo", "Resultado", &rows, terminal_width)
+    render_table("Chequeo", "Resultado", &rows, terminal_width, profile)
 }
 
 pub fn render_recovery_table(
     runtime: &RuntimeState,
     terminal_width: usize,
     compact: bool,
+    profile: StyleProfile,
 ) -> String {
     let mut rows = vec![
         ("Modo actual", runtime.mode.label().to_owned()),
@@ -135,12 +141,13 @@ pub fn render_recovery_table(
     } else {
         rows.push(("Resumen", runtime.status_summary.clone()));
     }
-    render_table("Recuperacion", "Valor", &rows, terminal_width)
+    render_table("Recuperacion", "Valor", &rows, terminal_width, profile)
 }
 
 pub fn render_install_table(
     install: &InstallationState,
     terminal_width: usize,
+    profile: StyleProfile,
 ) -> String {
     let rows = vec![
         (
@@ -159,7 +166,7 @@ pub fn render_install_table(
         ("Accion sugerida", install.action.label().to_owned()),
         ("Resultado previo", install.last_install_result.clone()),
     ];
-    render_table("Instalacion", "Valor", &rows, terminal_width)
+    render_table("Instalacion", "Valor", &rows, terminal_width, profile)
 }
 
 fn render_table(
@@ -167,6 +174,7 @@ fn render_table(
     right_header: &str,
     rows: &[(&str, String)],
     terminal_width: usize,
+    profile: StyleProfile,
 ) -> String {
     let width = terminal_width.saturating_sub(4).clamp(48, 92);
     let inner_width = width.saturating_sub(4);
@@ -179,20 +187,38 @@ fn render_table(
     let left_width = max_label_width.clamp(12, inner_width.saturating_sub(16).min(22));
     let right_width = inner_width.saturating_sub(left_width + 3);
 
+    let (top_left, top_mid, top_right, mid_left, mid_mid, mid_right, bottom_left, bottom_mid, bottom_right, horiz, vert) =
+        if profile.unicode {
+            ('┌', '┬', '┐', '├', '┼', '┤', '└', '┴', '┘', '─', '│')
+        } else {
+            ('+', '+', '+', '+', '+', '+', '+', '+', '+', '-', '|')
+        };
+
     let mut lines = Vec::new();
-    lines.push(border('┌', '┬', '┐', left_width, right_width));
-    lines.push(row(left_header, right_header, left_width, right_width));
-    lines.push(border('├', '┼', '┤', left_width, right_width));
+    lines.push(border(
+        top_left, top_mid, top_right, horiz, left_width, right_width,
+    ));
+    lines.push(row(left_header, right_header, left_width, right_width, vert));
+    lines.push(border(
+        mid_left, mid_mid, mid_right, horiz, left_width, right_width,
+    ));
     for (label, value) in rows {
-        lines.push(row(label, value, left_width, right_width));
+        lines.push(row(label, value, left_width, right_width, vert));
     }
-    lines.push(border('└', '┴', '┘', left_width, right_width));
+    lines.push(border(
+        bottom_left,
+        bottom_mid,
+        bottom_right,
+        horiz,
+        left_width,
+        right_width,
+    ));
     lines.join("\n")
 }
 
-fn row(left: &str, right: &str, left_width: usize, right_width: usize) -> String {
+fn row(left: &str, right: &str, left_width: usize, right_width: usize, vert: char) -> String {
     format!(
-        "│ {:left$} │ {:right$} │",
+        "{vert} {:left$} {vert} {:right$} {vert}",
         truncate(left, left_width),
         truncate(right, right_width),
         left = left_width,
@@ -204,13 +230,14 @@ fn border(
     left_edge: char,
     middle_edge: char,
     right_edge: char,
+    horiz: char,
     left_width: usize,
     right_width: usize,
 ) -> String {
     format!(
         "{left}{}{mid}{}{right}",
-        "─".repeat(left_width + 2),
-        "─".repeat(right_width + 2),
+        horiz.to_string().repeat(left_width + 2),
+        horiz.to_string().repeat(right_width + 2),
         left = left_edge,
         mid = middle_edge,
         right = right_edge
@@ -223,11 +250,11 @@ fn truncate(value: &str, width: usize) -> String {
         return value.to_owned();
     }
     if width <= 1 {
-        return "…".to_owned();
+        return "...".to_owned();
     }
 
     let mut truncated = value.chars().take(width - 1).collect::<String>();
-    truncated.push('…');
+    truncated.push(if width > 2 { '…' } else { '.' });
     truncated
 }
 

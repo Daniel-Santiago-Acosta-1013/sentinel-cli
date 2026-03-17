@@ -1,9 +1,13 @@
 pub mod copy;
 pub mod menu_state;
+pub mod navigation;
+pub mod logo;
 pub mod output;
 pub mod renderer;
+pub mod spinner;
 pub mod styles;
 pub mod terminal;
+pub mod views;
 
 use miette::{Result, miette};
 

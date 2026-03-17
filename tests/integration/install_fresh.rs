@@ -27,5 +27,5 @@ fn installer_places_sentinel_in_the_target_path_and_binary_is_callable() {
     let output = command.output().expect("run installed sentinel");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Pantalla: Inicio"));
+    assert!(stdout.contains("◆ Inicio"));
 }

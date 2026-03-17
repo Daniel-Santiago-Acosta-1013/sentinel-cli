@@ -1,7 +1,8 @@
 use predicates::str::contains;
 
 use crate::support::{
-    cargo_binary, install_command, installed_binary, next_port, temp_home,
+    cargo_binary, install_command, installed_binary, next_port,
+    round_trip_activation_script, temp_home,
 };
 
 #[test]
@@ -20,7 +21,7 @@ fn installed_binary_can_run_the_interactive_flow_end_to_end() {
         .env("SENTINEL_HOME", home.path())
         .env("SENTINEL_FAKE_PLATFORM", "1")
         .env("SENTINEL_DNS_PORT", port.to_string())
-        .env("SENTINEL_SCRIPT", "enter,down,enter,confirm,enter,confirm,exit")
+        .env("SENTINEL_SCRIPT", round_trip_activation_script())
         .output()
         .expect("run installed sentinel");
 

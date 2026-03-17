@@ -8,7 +8,7 @@ fn status_snapshot_surfaces_install_and_runtime_summary() {
     scripted_command(&home, "down,down,enter,exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Pantalla: Estado"))
+        .stdout(contains("◆ Estado actual"))
         .stdout(contains("Accion sugerida"));
 }
 
@@ -16,13 +16,13 @@ fn status_snapshot_surfaces_install_and_runtime_summary() {
 fn recovery_snapshot_stays_explicit_and_guided() {
     let home = temp_home();
     let port = next_port();
-    scripted_command(&home, "enter,down,enter,confirm,exit", port).assert().success();
+    scripted_command(&home, "down,enter,enter,enter,exit", port)
+        .assert()
+        .success();
 
-    scripted_command(&home, "down,down,down,down,enter,confirm,exit", port)
+    scripted_command(&home, "down,down,down,down,enter,enter,enter,exit", port)
         .assert()
         .success()
-        .stdout(contains("Pantalla: Recuperacion"))
-        .stdout(contains(
-            "La red coincide con el snapshot original capturado por Sentinel.",
-        ));
+        .stdout(contains("◆ Recuperacion completada"))
+        .stdout(contains("Sentinel restauro el ultimo snapshot valido"));
 }

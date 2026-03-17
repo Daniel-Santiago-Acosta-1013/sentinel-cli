@@ -13,6 +13,12 @@ use crate::{
     cli::InputEvent,
 };
 
+#[derive(Debug, Clone, Copy)]
+pub struct TerminalCapabilities {
+    pub color: bool,
+    pub unicode: bool,
+}
+
 pub struct TerminalSession {
     stdout: Stdout,
 }
@@ -29,12 +35,26 @@ impl TerminalSession {
         terminal::size().map(|(width, _)| width).unwrap_or(100)
     }
 
+    pub fn capabilities(&self) -> TerminalCapabilities {
+        TerminalCapabilities {
+            color: std::env::var_os("NO_COLOR").is_none()
+                && std::env::var("CLICOLOR").ok().as_deref() != Some("0"),
+            unicode: std::env::var("TERM").ok().as_deref() != Some("dumb")
+                && std::env::var("SENTINEL_ASCII_ONLY").ok().as_deref() != Some("1"),
+        }
+    }
+
     pub fn draw(&mut self, content: &str) -> AppResult<()> {
-        execute!(self.stdout, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))
-            .into_diagnostic()?;
+        self.clear_screen()?;
         write!(self.stdout, "{}", normalize_for_raw_terminal(content))
             .into_diagnostic()?;
         self.stdout.flush().into_diagnostic()?;
+        Ok(())
+    }
+
+    pub fn clear_screen(&mut self) -> AppResult<()> {
+        execute!(self.stdout, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0))
+            .into_diagnostic()?;
         Ok(())
     }
 
@@ -84,7 +104,7 @@ fn normalize_for_raw_terminal(content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_for_raw_terminal;
+    use super::{TerminalCapabilities, normalize_for_raw_terminal};
 
     #[test]
     fn normalizes_newlines_for_raw_terminal_output() {
@@ -97,5 +117,15 @@ mod tests {
             normalize_for_raw_terminal("uno\r\ndos"),
             "uno\r\ndos\r\n"
         );
+    }
+
+    #[test]
+    fn terminal_capabilities_struct_is_copyable() {
+        let capabilities = TerminalCapabilities {
+            color: true,
+            unicode: true,
+        };
+        assert!(capabilities.color);
+        assert!(capabilities.unicode);
     }
 }

@@ -6,52 +6,34 @@ use crate::{
     },
 };
 
-use super::copy;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ViewId {
-    Inicio,
-    Seguridad,
-    Estado,
-    Instalacion,
-    Recuperacion,
-    Confirmacion,
-    Salida,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActionId {
-    RunSafetyChecks,
-    ToggleProtection,
-    ViewStatus,
-    ViewInstallState,
-    RecoverNetwork,
-    Exit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfirmationAction {
-    EnableProtection,
-    DisableProtection,
-    RecoverNetwork,
-}
+use super::{
+    copy,
+    navigation::{
+        ConfirmationAction, MenuAction, MenuActionId, ResultTone, Route, default_route,
+    },
+};
 
 #[derive(Debug, Clone)]
-pub struct ActionItem {
-    pub id: ActionId,
-    pub label: String,
+pub struct OperationResult {
+    pub title: String,
+    pub summary: String,
+    pub next_step: String,
+    pub tone: ResultTone,
 }
 
 #[derive(Debug, Clone)]
 pub struct MenuSession {
-    pub view: ViewId,
+    pub route: Route,
     pub selected_index: usize,
     pub status_summary: String,
     pub risk_level: RiskLevel,
-    pub pending_confirmation: Option<ConfirmationAction>,
     pub last_message: String,
     pub runtime_state: RuntimeState,
     pub install_state: InstallationState,
+    pub transcript_mode: bool,
+    pub last_result: Option<OperationResult>,
+    pub progress_label: Option<String>,
+    pub progress_step: usize,
 }
 
 impl MenuSession {
@@ -59,114 +41,160 @@ impl MenuSession {
         mut runtime_state: RuntimeState,
         install_state: InstallationState,
         blocklist: &BlocklistBundle,
-        _transcript_mode: bool,
+        transcript_mode: bool,
     ) -> Self {
         normalize_runtime_copy(&mut runtime_state);
         runtime_state.refresh_bundle(blocklist);
-        let view = if matches!(
-            runtime_state.mode,
-            ProtectionMode::Degraded | ProtectionMode::Recovering
-        ) {
-            ViewId::Recuperacion
-        } else {
-            ViewId::Inicio
-        };
-        let selected_index = if view == ViewId::Recuperacion { 1 } else { 0 };
+        let route = default_route(runtime_state.mode);
         let last_message = runtime_state.last_message.clone().unwrap_or_else(|| {
-            "Sentinel esta listo para revisar seguridad o cambiar proteccion.".to_owned()
+            "Sentinel esta listo para revisar seguridad, ver el estado o cambiar la proteccion."
+                .to_owned()
         });
         Self {
-            view,
-            selected_index,
+            route,
+            selected_index: 0,
             status_summary: runtime_state.status_summary.clone(),
             risk_level: runtime_state.risk_level,
-            pending_confirmation: None,
             last_message,
             runtime_state,
             install_state,
+            transcript_mode,
+            last_result: None,
+            progress_label: None,
+            progress_step: 0,
         }
     }
 
-    pub fn actions(&self) -> Vec<ActionItem> {
-        if matches!(
-            self.runtime_state.mode,
-            ProtectionMode::Degraded | ProtectionMode::Recovering
-        ) {
-            return vec![
-                ActionItem {
-                    id: ActionId::ViewStatus,
-                    label: copy::action_label(
-                        ActionId::ViewStatus,
+    pub fn actions(&self) -> Vec<MenuAction> {
+        match self.route {
+            Route::Home => vec![
+                action(
+                    MenuActionId::RunSafetyChecks,
+                    copy::action_label(MenuActionId::RunSafetyChecks, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::RunSafetyChecks,
                         self.runtime_state.mode,
                     ),
-                },
-                ActionItem {
-                    id: ActionId::RecoverNetwork,
-                    label: copy::action_label(
-                        ActionId::RecoverNetwork,
+                ),
+                action(
+                    MenuActionId::ToggleProtection,
+                    copy::action_label(MenuActionId::ToggleProtection, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::ToggleProtection,
                         self.runtime_state.mode,
                     ),
-                },
-                ActionItem {
-                    id: ActionId::Exit,
-                    label: copy::action_label(ActionId::Exit, self.runtime_state.mode),
-                },
-            ];
+                ),
+                action(
+                    MenuActionId::ViewStatus,
+                    copy::action_label(MenuActionId::ViewStatus, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::ViewStatus,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::ViewInstallState,
+                    copy::action_label(MenuActionId::ViewInstallState, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::ViewInstallState,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::RecoverNetwork,
+                    copy::action_label(MenuActionId::RecoverNetwork, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::RecoverNetwork,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::Exit,
+                    copy::action_label(MenuActionId::Exit, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Exit, self.runtime_state.mode),
+                ),
+            ],
+            Route::Recovery => vec![
+                action(
+                    MenuActionId::RecoverNetwork,
+                    copy::action_label(MenuActionId::RecoverNetwork, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::RecoverNetwork,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::ViewStatus,
+                    copy::action_label(MenuActionId::ViewStatus, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::ViewStatus,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::BackHome,
+                    copy::action_label(MenuActionId::BackHome, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::BackHome, self.runtime_state.mode),
+                ),
+                action(
+                    MenuActionId::Exit,
+                    copy::action_label(MenuActionId::Exit, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Exit, self.runtime_state.mode),
+                ),
+            ],
+            Route::Confirm(_) => vec![
+                action(
+                    MenuActionId::Confirm,
+                    copy::action_label(MenuActionId::Confirm, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Confirm, self.runtime_state.mode),
+                ),
+                action(
+                    MenuActionId::Cancel,
+                    copy::action_label(MenuActionId::Cancel, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Cancel, self.runtime_state.mode),
+                ),
+            ],
+            Route::Progress => Vec::new(),
+            Route::Exit => Vec::new(),
+            _ => vec![
+                action(
+                    MenuActionId::BackHome,
+                    copy::action_label(MenuActionId::BackHome, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::BackHome, self.runtime_state.mode),
+                ),
+                action(
+                    MenuActionId::Exit,
+                    copy::action_label(MenuActionId::Exit, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Exit, self.runtime_state.mode),
+                ),
+            ],
         }
-
-        vec![
-            ActionItem {
-                id: ActionId::RunSafetyChecks,
-                label: copy::action_label(
-                    ActionId::RunSafetyChecks,
-                    self.runtime_state.mode,
-                ),
-            },
-            ActionItem {
-                id: ActionId::ToggleProtection,
-                label: copy::action_label(
-                    ActionId::ToggleProtection,
-                    self.runtime_state.mode,
-                ),
-            },
-            ActionItem {
-                id: ActionId::ViewStatus,
-                label: copy::action_label(ActionId::ViewStatus, self.runtime_state.mode),
-            },
-            ActionItem {
-                id: ActionId::ViewInstallState,
-                label: copy::action_label(
-                    ActionId::ViewInstallState,
-                    self.runtime_state.mode,
-                ),
-            },
-            ActionItem {
-                id: ActionId::RecoverNetwork,
-                label: copy::action_label(
-                    ActionId::RecoverNetwork,
-                    self.runtime_state.mode,
-                ),
-            },
-            ActionItem {
-                id: ActionId::Exit,
-                label: copy::action_label(ActionId::Exit, self.runtime_state.mode),
-            },
-        ]
     }
 
-    pub fn selected_action_id(&self) -> ActionId {
-        self.actions()[self.selected_index].id
+    pub fn selected_action_id(&self) -> Option<MenuActionId> {
+        self.actions().get(self.selected_index).map(|item| item.id)
     }
 
     pub fn select_next(&mut self) {
         let len = self.actions().len();
-        self.selected_index = (self.selected_index + 1) % len;
+        if len != 0 {
+            self.selected_index = (self.selected_index + 1) % len;
+        }
     }
 
     pub fn select_previous(&mut self) {
         let len = self.actions().len();
-        self.selected_index =
-            if self.selected_index == 0 { len - 1 } else { self.selected_index - 1 };
+        if len != 0 {
+            self.selected_index =
+                if self.selected_index == 0 { len - 1 } else { self.selected_index - 1 };
+        }
+    }
+
+    pub fn pending_confirmation(&self) -> ConfirmationAction {
+        match self.route {
+            Route::Confirm(action) => action,
+            other => panic!("route {other:?} is not a confirmation route"),
+        }
     }
 
     pub fn toggle_confirmation_action(&self) -> ConfirmationAction {
@@ -175,6 +203,28 @@ impl MenuSession {
         } else {
             ConfirmationAction::EnableProtection
         }
+    }
+
+    pub fn progress_label(&self) -> Option<&str> {
+        self.progress_label.as_deref()
+    }
+
+    pub fn show_result(
+        &mut self,
+        title: impl Into<String>,
+        summary: impl Into<String>,
+        next_step: impl Into<String>,
+        tone: ResultTone,
+    ) {
+        self.last_result = Some(OperationResult {
+            title: title.into(),
+            summary: summary.into(),
+            next_step: next_step.into(),
+            tone,
+        });
+        self.route = Route::Result;
+        self.selected_index = 0;
+        self.progress_label = None;
     }
 
     pub fn sync_runtime_state(&mut self, runtime_state: RuntimeState) {
@@ -187,21 +237,14 @@ impl MenuSession {
             .clone()
             .unwrap_or_else(|| self.last_message.clone());
         self.runtime_state = runtime_state;
-        let len = self.actions().len();
-        if self.selected_index >= len {
-            self.selected_index = len.saturating_sub(1);
-        }
-        if matches!(
-            self.runtime_state.mode,
-            ProtectionMode::Degraded | ProtectionMode::Recovering
-        ) {
-            self.view = ViewId::Recuperacion;
-            self.selected_index = self
-                .actions()
-                .iter()
-                .position(|item| item.id == ActionId::RecoverNetwork)
-                .unwrap_or(0);
-        }
+    }
+}
+
+fn action(id: MenuActionId, label: String, description: String) -> MenuAction {
+    MenuAction {
+        id,
+        label,
+        description,
     }
 }
 

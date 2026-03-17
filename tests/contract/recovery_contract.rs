@@ -1,7 +1,8 @@
 use predicates::str::contains;
 
 use crate::support::{
-    next_port, scripted_command, scripted_command_with_env, seed_fake_network, temp_home,
+    activation_script, next_port, recovery_script, scripted_command,
+    scripted_command_with_env, seed_fake_network, temp_home,
 };
 
 #[test]
@@ -9,15 +10,15 @@ fn recovery_flow_restores_control_from_the_interactive_session() {
     let home = temp_home();
     let port = next_port();
 
-    scripted_command(&home, "enter,down,enter,confirm,exit", port)
+    scripted_command(&home, activation_script(), port)
         .assert()
         .success()
         .stdout(contains("Proteccion: Activa"));
 
-    scripted_command(&home, "down,down,down,down,enter,confirm,exit", port)
+    scripted_command(&home, recovery_script(), port)
         .assert()
         .success()
-        .stdout(contains("Pantalla: Recuperacion"))
+        .stdout(contains("Recuperacion completada"))
         .stdout(contains("Sentinel restauro el ultimo snapshot valido"));
 }
 
@@ -26,7 +27,9 @@ fn degraded_runtime_is_visible_in_status_screen() {
     let home = temp_home();
     let port = next_port();
 
-    scripted_command(&home, "enter,down,enter,confirm,exit", port).assert().success();
+    scripted_command(&home, activation_script(), port)
+        .assert()
+        .success();
 
     let state_path = home.path().join("state/state.json");
     let mut state: serde_json::Value =
@@ -39,7 +42,8 @@ fn degraded_runtime_is_visible_in_status_screen() {
     scripted_command(&home, "down,down,enter,exit", port)
         .assert()
         .success()
-        .stdout(contains("Proteccion: Degradada"))
+        .stdout(contains("◆ Estado actual"))
+        .stdout(contains("Degradada"))
         .stdout(contains("Se recomienda recuperar la red"));
 }
 
@@ -48,21 +52,22 @@ fn restore_mismatch_stays_degraded_and_requests_recovery() {
     let home = temp_home();
     let port = next_port();
 
-    scripted_command(&home, "enter,down,enter,confirm,exit", port)
+    scripted_command(&home, activation_script(), port)
         .assert()
         .success()
         .stdout(contains("Proteccion: Activa"));
 
     scripted_command_with_env(
         &home,
-        "down,enter,confirm,exit",
+        recovery_script(),
         port,
         &[("SENTINEL_SIMULATE_RESTORE_MISMATCH", "1")],
     )
     .assert()
     .success()
+    .stdout(contains("Recuperacion con advertencias"))
     .stdout(contains("Proteccion: Degradada"))
-    .stdout(contains("La restauracion no coincide con el snapshot"));
+    .stdout(contains("detecto diferencias"));
 }
 
 #[test]
@@ -103,6 +108,6 @@ fn startup_with_previous_degraded_state_prioritizes_recovery() {
     scripted_command(&home, "exit", next_port())
         .assert()
         .success()
-        .stdout(contains("Pantalla: Recuperacion"))
+        .stdout(contains("◆ Recuperacion"))
         .stdout(contains("Recuperar red"));
 }
