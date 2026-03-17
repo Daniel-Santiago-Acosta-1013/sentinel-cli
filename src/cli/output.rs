@@ -12,21 +12,12 @@ pub fn render_summary_table(
     let mut rows = vec![
         ("Proteccion", runtime.mode.label().to_owned()),
         ("Riesgo", runtime.risk_level.label().to_owned()),
-        (
-            "Snapshot activo",
-            runtime.snapshot_id.as_deref().unwrap_or("-").to_owned(),
-        ),
+        ("Snapshot activo", runtime.snapshot_id.as_deref().unwrap_or("-").to_owned()),
         ("Siguiente accion", next_action.to_owned()),
     ];
     if !compact {
-        rows.push((
-            "Dominios bloqueados",
-            runtime.blocklist_domain_count.to_string(),
-        ));
-        rows.push((
-            "Version del bloqueador",
-            runtime.blocklist_version.clone(),
-        ));
+        rows.push(("Dominios bloqueados", runtime.blocklist_domain_count.to_string()));
+        rows.push(("Version del bloqueador", runtime.blocklist_version.clone()));
     }
     render_table("Campo", "Valor", &rows, terminal_width, profile)
 }
@@ -48,17 +39,10 @@ pub fn render_status_table(
                 .map(|pid| pid.to_string())
                 .unwrap_or_else(|| "No activo".to_owned()),
         ),
-        (
-            "Snapshot activo",
-            runtime.snapshot_id.as_deref().unwrap_or("-").to_owned(),
-        ),
+        ("Snapshot activo", runtime.snapshot_id.as_deref().unwrap_or("-").to_owned()),
         (
             "Ruta instalada",
-            install
-                .path_entry
-                .as_deref()
-                .unwrap_or("No disponible")
-                .to_owned(),
+            install.path_entry.as_deref().unwrap_or("No disponible").to_owned(),
         ),
         ("Resumen", runtime.status_summary.clone()),
     ];
@@ -68,11 +52,7 @@ pub fn render_status_table(
     if !compact {
         rows.push((
             "Version instalada",
-            install
-                .installed_version
-                .as_deref()
-                .unwrap_or("No detectada")
-                .to_owned(),
+            install.installed_version.as_deref().unwrap_or("No detectada").to_owned(),
         ));
         rows.push(("Accion sugerida", install.action.label().to_owned()));
     }
@@ -121,10 +101,7 @@ pub fn render_recovery_table(
 ) -> String {
     let mut rows = vec![
         ("Modo actual", runtime.mode.label().to_owned()),
-        (
-            "Snapshot",
-            runtime.snapshot_id.as_deref().unwrap_or("-").to_owned(),
-        ),
+        ("Snapshot", runtime.snapshot_id.as_deref().unwrap_or("-").to_owned()),
     ];
     if let Some(verification) = runtime.last_verification_result.as_ref() {
         rows.push((
@@ -150,18 +127,11 @@ pub fn render_install_table(
     profile: StyleProfile,
 ) -> String {
     let rows = vec![
-        (
-            "Instalado",
-            if install.installed { "Si" } else { "No" }.to_owned(),
-        ),
+        ("Instalado", if install.installed { "Si" } else { "No" }.to_owned()),
         ("Version objetivo", install.target_version.clone()),
         (
             "Version instalada",
-            install
-                .installed_version
-                .as_deref()
-                .unwrap_or("No detectada")
-                .to_owned(),
+            install.installed_version.as_deref().unwrap_or("No detectada").to_owned(),
         ),
         ("Accion sugerida", install.action.label().to_owned()),
         ("Resultado previo", install.last_install_result.clone()),
@@ -187,21 +157,28 @@ fn render_table(
     let left_width = max_label_width.clamp(12, inner_width.saturating_sub(16).min(22));
     let right_width = inner_width.saturating_sub(left_width + 3);
 
-    let (top_left, top_mid, top_right, mid_left, mid_mid, mid_right, bottom_left, bottom_mid, bottom_right, horiz, vert) =
-        if profile.unicode {
-            ('┌', '┬', '┐', '├', '┼', '┤', '└', '┴', '┘', '─', '│')
-        } else {
-            ('+', '+', '+', '+', '+', '+', '+', '+', '+', '-', '|')
-        };
+    let (
+        top_left,
+        top_mid,
+        top_right,
+        mid_left,
+        mid_mid,
+        mid_right,
+        bottom_left,
+        bottom_mid,
+        bottom_right,
+        horiz,
+        vert,
+    ) = if profile.unicode {
+        ('┌', '┬', '┐', '├', '┼', '┤', '└', '┴', '┘', '─', '│')
+    } else {
+        ('+', '+', '+', '+', '+', '+', '+', '+', '+', '-', '|')
+    };
 
     let mut lines = Vec::new();
-    lines.push(border(
-        top_left, top_mid, top_right, horiz, left_width, right_width,
-    ));
+    lines.push(border(top_left, top_mid, top_right, horiz, left_width, right_width));
     lines.push(row(left_header, right_header, left_width, right_width, vert));
-    lines.push(border(
-        mid_left, mid_mid, mid_right, horiz, left_width, right_width,
-    ));
+    lines.push(border(mid_left, mid_mid, mid_right, horiz, left_width, right_width));
     for (label, value) in rows {
         lines.push(row(label, value, left_width, right_width, vert));
     }
@@ -216,7 +193,13 @@ fn render_table(
     lines.join("\n")
 }
 
-fn row(left: &str, right: &str, left_width: usize, right_width: usize, vert: char) -> String {
+fn row(
+    left: &str,
+    right: &str,
+    left_width: usize,
+    right_width: usize,
+    vert: char,
+) -> String {
     format!(
         "{vert} {:left$} {vert} {:right$} {vert}",
         truncate(left, left_width),
@@ -259,9 +242,5 @@ fn truncate(value: &str, width: usize) -> String {
 }
 
 fn join_or_dash(items: &[String]) -> String {
-    if items.is_empty() {
-        "-".to_owned()
-    } else {
-        items.join(", ")
-    }
+    if items.is_empty() { "-".to_owned() } else { items.join(", ") }
 }

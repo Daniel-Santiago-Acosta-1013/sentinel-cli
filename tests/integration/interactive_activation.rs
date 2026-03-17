@@ -1,6 +1,8 @@
 use predicates::str::contains;
 
-use crate::support::{next_port, round_trip_activation_script, scripted_command, temp_home};
+use crate::support::{
+    next_port, round_trip_activation_script, scripted_command, temp_home,
+};
 
 #[test]
 fn guided_activation_and_disable_round_trip_preserves_state() {

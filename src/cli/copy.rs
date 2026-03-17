@@ -1,9 +1,9 @@
-use crate::storage::state::ProtectionMode;
+use crate::{install::version, storage::state::ProtectionMode};
 
 use super::navigation::{ConfirmationAction, MenuActionId, Route};
 
-pub fn app_subtitle() -> &'static str {
-    "CLI guiada para proteger tu DNS con un flujo limpio, claro y seguro."
+pub fn app_subtitle() -> String {
+    format!("Version {}", version::current_version())
 }
 
 pub fn route_title(route: Route) -> &'static str {
@@ -22,7 +22,9 @@ pub fn route_title(route: Route) -> &'static str {
 
 pub fn intro_text(route: Route, mode: ProtectionMode) -> &'static str {
     match route {
-        Route::Home if matches!(mode, ProtectionMode::Degraded | ProtectionMode::Recovering) => {
+        Route::Home
+            if matches!(mode, ProtectionMode::Degraded | ProtectionMode::Recovering) =>
+        {
             "Sentinel detecto un estado sensible. Puedes priorizar la recuperacion o revisar el estado antes de hacer nuevos cambios."
         }
         Route::Home => {
@@ -56,23 +58,6 @@ pub fn footer_hint(route: Route) -> &'static str {
             "Usa ↑/↓ para navegar, Enter para confirmar, Esc para volver y q para salir."
         }
         _ => "Usa ↑/↓ para elegir, Enter para continuar, Esc para volver y q para salir.",
-    }
-}
-
-pub fn home_summary_hint(mode: ProtectionMode) -> String {
-    match mode {
-        ProtectionMode::Inactive => {
-            "Puedes ejecutar chequeos o activar la proteccion desde este inicio."
-                .to_owned()
-        }
-        ProtectionMode::Active => {
-            "La proteccion esta activa. Puedes revisar el estado o desactivarla desde el inicio."
-                .to_owned()
-        }
-        ProtectionMode::Degraded | ProtectionMode::Recovering => {
-            "Prioriza revisar el estado o recuperar la red antes de otros cambios."
-                .to_owned()
-        }
     }
 }
 

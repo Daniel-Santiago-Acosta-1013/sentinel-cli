@@ -1,7 +1,7 @@
 pub mod copy;
+pub mod logo;
 pub mod menu_state;
 pub mod navigation;
-pub mod logo;
 pub mod output;
 pub mod renderer;
 pub mod spinner;
@@ -31,9 +31,7 @@ pub fn parse_script(script: &str) -> Result<Vec<InputEvent>> {
             "enter" | "confirm" | "confirmar" | "si" | "sí" | "s" => {
                 Ok(InputEvent::Confirm)
             }
-            "back" | "esc" | "cancel" | "cancelar" | "no" | "b" => {
-                Ok(InputEvent::Back)
-            }
+            "back" | "esc" | "cancel" | "cancelar" | "no" | "b" => Ok(InputEvent::Back),
             "quit" | "exit" | "q" | "salir" => Ok(InputEvent::Exit),
             other => Err(miette!("token de entrada no soportado: {other}")),
         })

@@ -27,9 +27,7 @@ fn degraded_runtime_is_visible_in_status_screen() {
     let home = temp_home();
     let port = next_port();
 
-    scripted_command(&home, activation_script(), port)
-        .assert()
-        .success();
+    scripted_command(&home, activation_script(), port).assert().success();
 
     let state_path = home.path().join("state/state.json");
     let mut state: serde_json::Value =

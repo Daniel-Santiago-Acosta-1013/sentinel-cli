@@ -15,7 +15,9 @@ use crate::{
     cli::{
         InputEvent,
         menu_state::MenuSession,
-        navigation::{ConfirmationAction, MenuActionId, ResultTone, Route, default_route},
+        navigation::{
+            ConfirmationAction, MenuActionId, ResultTone, Route, default_route,
+        },
         parse_script, renderer,
         terminal::TerminalSession,
     },
@@ -170,7 +172,8 @@ impl SentinelApp {
         let mut transcript = vec![renderer::render_snapshot(&session)];
         for event in parse_script(&script)? {
             if let Some(progress) = self.progress_label_for_input(&session, event) {
-                transcript.push(renderer::render_progress_preview(&session, 100, &progress));
+                transcript
+                    .push(renderer::render_progress_preview(&session, 100, &progress));
             }
 
             let should_exit = self.handle_input(&mut session, event).await?;
@@ -190,22 +193,31 @@ impl SentinelApp {
         let _color_enabled = capabilities.color;
         let _unicode_enabled = capabilities.unicode;
         let mut session = self.load_session(false)?;
+        let mut last_drawn_route = None;
 
         loop {
             let frame = renderer::render(&session, terminal.width());
-            terminal.draw(&frame)?;
+            draw_frame(&mut terminal, &frame, session.route, &mut last_drawn_route)?;
             let input = terminal.read_input()?;
 
             if let Some(progress) = self.progress_label_for_input(&session, input) {
-                let progress_frame =
-                    renderer::render_progress_preview(&session, terminal.width(), &progress);
-                terminal.draw(&progress_frame)?;
+                let progress_frame = renderer::render_progress_preview(
+                    &session,
+                    terminal.width(),
+                    &progress,
+                );
+                draw_frame(
+                    &mut terminal,
+                    &progress_frame,
+                    Route::Progress,
+                    &mut last_drawn_route,
+                )?;
             }
 
             let should_exit = self.handle_input(&mut session, input).await?;
             if should_exit {
                 let frame = renderer::render(&session, terminal.width());
-                terminal.draw(&frame)?;
+                draw_frame(&mut terminal, &frame, session.route, &mut last_drawn_route)?;
                 break;
             }
         }
@@ -369,9 +381,9 @@ impl SentinelApp {
                 }
                 _ => None,
             },
-            Route::Confirm(ConfirmationAction::EnableProtection) => {
-                Some("Activando proteccion y preparando snapshot recuperable...".to_owned())
-            }
+            Route::Confirm(ConfirmationAction::EnableProtection) => Some(
+                "Activando proteccion y preparando snapshot recuperable...".to_owned(),
+            ),
             Route::Confirm(ConfirmationAction::DisableProtection) => {
                 Some("Desactivando proteccion y restaurando la red...".to_owned())
             }
@@ -497,7 +509,8 @@ impl SentinelApp {
         let next_state = controller.recover().await?;
         session.sync_runtime_state(next_state);
 
-        let (title, tone) = match session.runtime_state.last_verification_result.as_ref() {
+        let (title, tone) = match session.runtime_state.last_verification_result.as_ref()
+        {
             Some(verification) if verification.matches_snapshot => {
                 ("Recuperacion completada", ResultTone::Success)
             }
@@ -511,8 +524,7 @@ impl SentinelApp {
         session.show_result(
             title,
             session.runtime_state.last_message.clone().unwrap_or_else(|| {
-                "La recuperacion termino y Sentinel verifico el estado de red."
-                    .to_owned()
+                "La recuperacion termino y Sentinel verifico el estado de red.".to_owned()
             }),
             "Pulsa Enter para volver al inicio o revisa el estado antes de salir.",
             tone,
@@ -563,6 +575,21 @@ impl SentinelApp {
                 .to_owned();
         Ok(())
     }
+}
+
+fn draw_frame(
+    terminal: &mut TerminalSession,
+    frame: &str,
+    route: Route,
+    last_drawn_route: &mut Option<Route>,
+) -> AppResult<()> {
+    if last_drawn_route.is_some_and(|previous| previous == route) {
+        terminal.redraw(frame)?;
+    } else {
+        terminal.draw(frame)?;
+    }
+    *last_drawn_route = Some(route);
+    Ok(())
 }
 
 fn back_route_for(mode: ProtectionMode) -> Route {

@@ -22,10 +22,7 @@ pub fn profile(transcript_mode: bool) -> StyleProfile {
         || std::env::var("CLICOLOR").ok().as_deref() == Some("0");
     let unicode = std::env::var("TERM").ok().as_deref() != Some("dumb")
         && std::env::var("SENTINEL_ASCII_ONLY").ok().as_deref() != Some("1");
-    StyleProfile {
-        color: !no_color,
-        unicode,
-    }
+    StyleProfile { color: !no_color, unicode }
 }
 
 pub fn title(label: &str, profile: StyleProfile) -> String {
@@ -103,17 +100,9 @@ pub fn status_badge(
 }
 
 pub fn menu_line(label: &str, selected: bool, profile: StyleProfile) -> String {
-    let pointer = if selected {
-        if profile.unicode { "›" } else { ">" }
-    } else {
-        " "
-    };
+    let pointer = if selected { if profile.unicode { "›" } else { ">" } } else { " " };
     let text = format!("{pointer} {label}");
-    if selected {
-        colorize(&text, "1;32", profile)
-    } else {
-        text
-    }
+    if selected { colorize(&text, "1;32", profile) } else { text }
 }
 
 pub fn menu_description(label: &str, selected: bool, profile: StyleProfile) -> String {

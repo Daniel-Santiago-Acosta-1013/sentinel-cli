@@ -8,10 +8,7 @@ use crossterm::{
 };
 use miette::IntoDiagnostic;
 
-use crate::{
-    app::AppResult,
-    cli::InputEvent,
-};
+use crate::{app::AppResult, cli::InputEvent};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TerminalCapabilities {
@@ -46,6 +43,19 @@ impl TerminalSession {
 
     pub fn draw(&mut self, content: &str) -> AppResult<()> {
         self.clear_screen()?;
+        write!(self.stdout, "{}", normalize_for_raw_terminal(content))
+            .into_diagnostic()?;
+        self.stdout.flush().into_diagnostic()?;
+        Ok(())
+    }
+
+    pub fn redraw(&mut self, content: &str) -> AppResult<()> {
+        execute!(
+            self.stdout,
+            cursor::MoveTo(0, 0),
+            terminal::Clear(ClearType::FromCursorDown)
+        )
+        .into_diagnostic()?;
         write!(self.stdout, "{}", normalize_for_raw_terminal(content))
             .into_diagnostic()?;
         self.stdout.flush().into_diagnostic()?;
@@ -108,23 +118,14 @@ mod tests {
 
     #[test]
     fn normalizes_newlines_for_raw_terminal_output() {
-        assert_eq!(
-            normalize_for_raw_terminal("uno\ndos\n"),
-            "uno\r\ndos\r\n"
-        );
+        assert_eq!(normalize_for_raw_terminal("uno\ndos\n"), "uno\r\ndos\r\n");
         assert_eq!(normalize_for_raw_terminal("uno"), "uno\r\n");
-        assert_eq!(
-            normalize_for_raw_terminal("uno\r\ndos"),
-            "uno\r\ndos\r\n"
-        );
+        assert_eq!(normalize_for_raw_terminal("uno\r\ndos"), "uno\r\ndos\r\n");
     }
 
     #[test]
     fn terminal_capabilities_struct_is_copyable() {
-        let capabilities = TerminalCapabilities {
-            color: true,
-            unicode: true,
-        };
+        let capabilities = TerminalCapabilities { color: true, unicode: true };
         assert!(capabilities.color);
         assert!(capabilities.unicode);
     }

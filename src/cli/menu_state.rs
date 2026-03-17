@@ -70,7 +70,10 @@ impl MenuSession {
             Route::Home => vec![
                 action(
                     MenuActionId::RunSafetyChecks,
-                    copy::action_label(MenuActionId::RunSafetyChecks, self.runtime_state.mode),
+                    copy::action_label(
+                        MenuActionId::RunSafetyChecks,
+                        self.runtime_state.mode,
+                    ),
                     copy::action_description(
                         MenuActionId::RunSafetyChecks,
                         self.runtime_state.mode,
@@ -78,7 +81,10 @@ impl MenuSession {
                 ),
                 action(
                     MenuActionId::ToggleProtection,
-                    copy::action_label(MenuActionId::ToggleProtection, self.runtime_state.mode),
+                    copy::action_label(
+                        MenuActionId::ToggleProtection,
+                        self.runtime_state.mode,
+                    ),
                     copy::action_description(
                         MenuActionId::ToggleProtection,
                         self.runtime_state.mode,
@@ -94,7 +100,10 @@ impl MenuSession {
                 ),
                 action(
                     MenuActionId::ViewInstallState,
-                    copy::action_label(MenuActionId::ViewInstallState, self.runtime_state.mode),
+                    copy::action_label(
+                        MenuActionId::ViewInstallState,
+                        self.runtime_state.mode,
+                    ),
                     copy::action_description(
                         MenuActionId::ViewInstallState,
                         self.runtime_state.mode,
@@ -102,7 +111,10 @@ impl MenuSession {
                 ),
                 action(
                     MenuActionId::RecoverNetwork,
-                    copy::action_label(MenuActionId::RecoverNetwork, self.runtime_state.mode),
+                    copy::action_label(
+                        MenuActionId::RecoverNetwork,
+                        self.runtime_state.mode,
+                    ),
                     copy::action_description(
                         MenuActionId::RecoverNetwork,
                         self.runtime_state.mode,
@@ -117,7 +129,10 @@ impl MenuSession {
             Route::Recovery => vec![
                 action(
                     MenuActionId::RecoverNetwork,
-                    copy::action_label(MenuActionId::RecoverNetwork, self.runtime_state.mode),
+                    copy::action_label(
+                        MenuActionId::RecoverNetwork,
+                        self.runtime_state.mode,
+                    ),
                     copy::action_description(
                         MenuActionId::RecoverNetwork,
                         self.runtime_state.mode,
@@ -134,7 +149,10 @@ impl MenuSession {
                 action(
                     MenuActionId::BackHome,
                     copy::action_label(MenuActionId::BackHome, self.runtime_state.mode),
-                    copy::action_description(MenuActionId::BackHome, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::BackHome,
+                        self.runtime_state.mode,
+                    ),
                 ),
                 action(
                     MenuActionId::Exit,
@@ -146,12 +164,18 @@ impl MenuSession {
                 action(
                     MenuActionId::Confirm,
                     copy::action_label(MenuActionId::Confirm, self.runtime_state.mode),
-                    copy::action_description(MenuActionId::Confirm, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::Confirm,
+                        self.runtime_state.mode,
+                    ),
                 ),
                 action(
                     MenuActionId::Cancel,
                     copy::action_label(MenuActionId::Cancel, self.runtime_state.mode),
-                    copy::action_description(MenuActionId::Cancel, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::Cancel,
+                        self.runtime_state.mode,
+                    ),
                 ),
             ],
             Route::Progress => Vec::new(),
@@ -160,7 +184,10 @@ impl MenuSession {
                 action(
                     MenuActionId::BackHome,
                     copy::action_label(MenuActionId::BackHome, self.runtime_state.mode),
-                    copy::action_description(MenuActionId::BackHome, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::BackHome,
+                        self.runtime_state.mode,
+                    ),
                 ),
                 action(
                     MenuActionId::Exit,
@@ -241,11 +268,7 @@ impl MenuSession {
 }
 
 fn action(id: MenuActionId, label: String, description: String) -> MenuAction {
-    MenuAction {
-        id,
-        label,
-        description,
-    }
+    MenuAction { id, label, description }
 }
 
 fn normalize_runtime_copy(runtime_state: &mut RuntimeState) {
@@ -255,8 +278,7 @@ fn normalize_runtime_copy(runtime_state: &mut RuntimeState) {
 
     if let Some(check) = runtime_state.last_safety_check.as_mut() {
         check.recommended_action = normalize_copy(&check.recommended_action);
-        check.issues =
-            check.issues.iter().map(|issue| normalize_copy(issue)).collect();
+        check.issues = check.issues.iter().map(|issue| normalize_copy(issue)).collect();
     }
 
     if let Some(verification) = runtime_state.last_verification_result.as_mut() {

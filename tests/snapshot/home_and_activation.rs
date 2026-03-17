@@ -1,4 +1,4 @@
-use predicates::str::contains;
+use predicates::{prelude::*, str::contains};
 
 use crate::support::{next_port, scripted_command, temp_home};
 
@@ -8,8 +8,10 @@ fn home_snapshot_stays_clean_and_focused() {
     scripted_command(&home, "exit", next_port())
         .assert()
         .success()
-        .stdout(contains("CLI guiada para proteger tu DNS"))
+        .stdout(contains(env!("CARGO_PKG_VERSION")))
         .stdout(contains("◆ Inicio"))
+        .stdout(contains("Elige una accion principal").not())
+        .stdout(contains("Campo").not())
         .stdout(contains("› Ejecutar chequeos de seguridad"));
 }
 
