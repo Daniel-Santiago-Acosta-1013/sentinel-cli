@@ -99,17 +99,6 @@ impl MenuSession {
                     ),
                 ),
                 action(
-                    MenuActionId::ViewInstallState,
-                    copy::action_label(
-                        MenuActionId::ViewInstallState,
-                        self.runtime_state.mode,
-                    ),
-                    copy::action_description(
-                        MenuActionId::ViewInstallState,
-                        self.runtime_state.mode,
-                    ),
-                ),
-                action(
                     MenuActionId::RecoverNetwork,
                     copy::action_label(
                         MenuActionId::RecoverNetwork,

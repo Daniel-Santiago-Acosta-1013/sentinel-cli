@@ -51,7 +51,7 @@ pub fn round_trip_activation_script() -> &'static str {
 }
 
 pub fn recovery_script() -> &'static str {
-    "down,down,down,down,enter,enter,enter,exit"
+    "down,down,down,enter,enter,enter,exit"
 }
 
 pub fn install_command(install_dir: &Path, source_bin: &Path) -> Command {

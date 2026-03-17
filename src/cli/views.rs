@@ -16,7 +16,6 @@ pub fn render(
         Route::Home => render_home(session, terminal_width, profile),
         Route::Safety => render_detail(session, terminal_width, profile),
         Route::Status => render_detail(session, terminal_width, profile),
-        Route::Installation => render_detail(session, terminal_width, profile),
         Route::Recovery => render_recovery(session, terminal_width, profile),
         Route::Confirm(_) => render_confirmation(session, profile),
         Route::Progress => render_progress(session, terminal_width, profile),
@@ -81,9 +80,6 @@ fn render_detail(
             compact,
             profile,
         ),
-        Route::Installation => {
-            output::render_install_table(&session.install_state, terminal_width, profile)
-        }
         _ => String::new(),
     };
 
@@ -162,7 +158,7 @@ fn render_progress(
     if width > 60 {
         lines.push(String::new());
         lines.push(styles::muted(
-            &format!("Estado actual: {}", session.runtime_state.mode.label()),
+            &format!("Estado de Sentinel: {}", session.runtime_state.mode.label()),
             profile,
         ));
     }

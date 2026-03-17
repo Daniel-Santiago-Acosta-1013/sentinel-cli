@@ -40,7 +40,7 @@ fn degraded_runtime_is_visible_in_status_screen() {
     scripted_command(&home, "down,down,enter,exit", port)
         .assert()
         .success()
-        .stdout(contains("◆ Estado actual"))
+        .stdout(contains("◆ Estado de Sentinel"))
         .stdout(contains("Degradada"))
         .stdout(contains("Se recomienda recuperar la red"));
 }

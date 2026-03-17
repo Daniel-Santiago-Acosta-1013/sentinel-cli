@@ -121,24 +121,6 @@ pub fn render_recovery_table(
     render_table("Recuperacion", "Valor", &rows, terminal_width, profile)
 }
 
-pub fn render_install_table(
-    install: &InstallationState,
-    terminal_width: usize,
-    profile: StyleProfile,
-) -> String {
-    let rows = vec![
-        ("Instalado", if install.installed { "Si" } else { "No" }.to_owned()),
-        ("Version objetivo", install.target_version.clone()),
-        (
-            "Version instalada",
-            install.installed_version.as_deref().unwrap_or("No detectada").to_owned(),
-        ),
-        ("Accion sugerida", install.action.label().to_owned()),
-        ("Resultado previo", install.last_install_result.clone()),
-    ];
-    render_table("Instalacion", "Valor", &rows, terminal_width, profile)
-}
-
 fn render_table(
     left_header: &str,
     right_header: &str,

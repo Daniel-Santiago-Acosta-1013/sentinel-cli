@@ -273,7 +273,7 @@ impl SentinelApp {
                     "La accion sensible fue cancelada antes de cambiar la red."
                         .to_owned();
             }
-            Route::Result | Route::Safety | Route::Status | Route::Installation => {
+            Route::Result | Route::Safety | Route::Status => {
                 session.route = Route::Home;
                 session.selected_index = 0;
                 session.last_result = None;
@@ -313,10 +313,6 @@ impl SentinelApp {
             }
             MenuActionId::ViewStatus => {
                 self.refresh_status(session)?;
-                Ok(false)
-            }
-            MenuActionId::ViewInstallState => {
-                self.show_install_state(session)?;
                 Ok(false)
             }
             MenuActionId::RecoverNetwork => {
@@ -381,9 +377,9 @@ impl SentinelApp {
                 }
                 _ => None,
             },
-            Route::Confirm(ConfirmationAction::EnableProtection) => Some(
-                "Activando Sentinel y preparando snapshot recuperable...".to_owned(),
-            ),
+            Route::Confirm(ConfirmationAction::EnableProtection) => {
+                Some("Activando Sentinel y preparando snapshot recuperable...".to_owned())
+            }
             Route::Confirm(ConfirmationAction::DisableProtection) => {
                 Some("Desactivando Sentinel y restaurando la red...".to_owned())
             }
@@ -560,18 +556,6 @@ impl SentinelApp {
         session.last_result = None;
         session.last_message =
             "Estado actualizado desde el runtime persistido, seguridad e instalacion."
-                .to_owned();
-        Ok(())
-    }
-
-    fn show_install_state(&self, session: &mut MenuSession) -> AppResult<()> {
-        let install = self.install_store.inspect_current()?;
-        session.install_state = install;
-        session.route = Route::Installation;
-        session.selected_index = 0;
-        session.last_result = None;
-        session.last_message =
-            "Estado de instalacion cargado. Usa el script oficial para instalar o actualizar."
                 .to_owned();
         Ok(())
     }

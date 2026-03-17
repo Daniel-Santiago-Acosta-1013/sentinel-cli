@@ -8,7 +8,7 @@ fn status_snapshot_surfaces_install_and_runtime_summary() {
     scripted_command(&home, "down,down,enter,exit", next_port())
         .assert()
         .success()
-        .stdout(contains("◆ Estado actual"))
+        .stdout(contains("◆ Estado de Sentinel"))
         .stdout(contains("Accion sugerida"));
 }
 
@@ -18,7 +18,7 @@ fn recovery_snapshot_stays_explicit_and_guided() {
     let port = next_port();
     scripted_command(&home, "down,enter,enter,enter,exit", port).assert().success();
 
-    scripted_command(&home, "down,down,down,down,enter,enter,enter,exit", port)
+    scripted_command(&home, "down,down,down,enter,enter,enter,exit", port)
         .assert()
         .success()
         .stdout(contains("◆ Recuperacion completada"))

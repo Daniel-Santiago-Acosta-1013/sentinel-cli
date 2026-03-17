@@ -10,8 +10,7 @@ pub fn route_title(route: Route) -> &'static str {
     match route {
         Route::Home => "Inicio",
         Route::Safety => "Chequeos de seguridad",
-        Route::Status => "Estado actual",
-        Route::Installation => "Estado de instalacion",
+        Route::Status => "Estado de Sentinel",
         Route::Recovery => "Recuperacion",
         Route::Confirm(_) => "Confirmacion",
         Route::Progress => "Procesando",
@@ -34,10 +33,7 @@ pub fn intro_text(route: Route, mode: ProtectionMode) -> &'static str {
             "Revisa si el equipo esta listo para cambiar la proteccion sin comprometer conectividad."
         }
         Route::Status => {
-            "Consulta el estado actual de proteccion, runtime, snapshot y siguientes pasos."
-        }
-        Route::Installation => {
-            "Consulta el estado de instalacion actual. Las acciones de instalacion siguen pasando por el script oficial."
+            "Consulta el estado actual de Sentinel, su runtime, el snapshot y los siguientes pasos."
         }
         Route::Recovery => {
             "Usa esta vista para recuperar la red o revisar el estado cuando Sentinel detecta un problema."
@@ -71,8 +67,7 @@ pub fn action_label(action: MenuActionId, mode: ProtectionMode) -> String {
                 "Activar Sentinel".to_owned()
             }
         }
-        MenuActionId::ViewStatus => "Ver estado actual".to_owned(),
-        MenuActionId::ViewInstallState => "Ver estado de instalacion".to_owned(),
+        MenuActionId::ViewStatus => "Ver estado de Sentinel".to_owned(),
         MenuActionId::RecoverNetwork => "Recuperar red".to_owned(),
         MenuActionId::BackHome => "Volver al inicio".to_owned(),
         MenuActionId::Exit => "Salir de Sentinel".to_owned(),
@@ -96,11 +91,7 @@ pub fn action_description(action: MenuActionId, mode: ProtectionMode) -> String 
                 .to_owned()
         }
         MenuActionId::ViewStatus => {
-            "Muestra un resumen independiente de proteccion, runtime, snapshot e instalacion."
-                .to_owned()
-        }
-        MenuActionId::ViewInstallState => {
-            "Consulta version instalada, ruta detectada y accion sugerida."
+            "Muestra el estado actual de Sentinel, su runtime, el snapshot y la instalacion."
                 .to_owned()
         }
         MenuActionId::RecoverNetwork => {
