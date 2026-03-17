@@ -90,6 +90,39 @@ funcionales existentes.
    flujos principales, **Then** sigue pudiendo completar las mismas tareas
    esenciales que antes del rediseño.
 
+---
+
+### User Story 4 - Revisar logs detallados para entender fallos y acciones ejecutadas (Priority: P2)
+
+Como usuario, quiero una opción adicional de logs dentro del flujo guiado de
+Sentinel para revisar con precisión qué ocurrió, qué acciones se ejecutaron y
+cuál fue la causa exacta de un error cuando algo falla.
+
+**Why this priority**: Cuando Sentinel muestra advertencias o errores, el
+usuario necesita contexto verificable para recuperar control y tomar la
+siguiente decisión correcta sin depender de mensajes ambiguos o demasiado
+breves.
+
+**Independent Test**: Puede probarse ejecutando una acción exitosa y una acción
+fallida, abriendo luego la vista de logs desde el home y verificando que los
+eventos recientes muestran detalle suficiente para distinguir la operación
+realizada, su resultado y la razón exacta de cualquier error.
+
+**Acceptance Scenarios**:
+
+1. **Given** que el usuario se encuentra en el home, **When** selecciona la
+   opción de logs, **Then** Sentinel abre una vista independiente de logs con
+   navegación clara y sin mezclar contenido del home.
+2. **Given** que una acción falla, **When** el usuario revisa la vista de logs,
+   **Then** puede ver el error exacto, el contexto de la acción afectada y una
+   explicación precisa de la causa reportada por Sentinel.
+3. **Given** que una acción termina con éxito, advertencia o recuperación,
+   **When** el usuario abre la vista de logs, **Then** puede identificar el
+   evento correspondiente con su resultado y momento relativo dentro del flujo.
+4. **Given** que no existen eventos relevantes todavía, **When** el usuario
+   entra a la vista de logs, **Then** Sentinel muestra un estado vacío claro
+   que indique que aún no hay registros para revisar.
+
 ### Edge Cases
 
 - ¿Qué ocurre si la terminal no tiene suficiente alto o ancho para mostrar el
@@ -102,6 +135,10 @@ funcionales existentes.
   usuario necesita volver al home sin perder el mensaje final?
 - ¿Cómo se comporta el flujo cuando el usuario abre una vista que no tiene datos
   disponibles todavía o cuyo estado es desconocido?
+- ¿Qué sucede si un error operativo no tiene una causa recuperable clara y el
+  sistema solo puede ofrecer el detalle exacto disponible en ese momento?
+- ¿Cómo debe comportarse la vista de logs cuando existen muchos eventos
+  recientes y no todos caben en una sola pantalla?
 
 ## Requirements *(mandatory)*
 
@@ -160,6 +197,25 @@ funcionales existentes.
   secundarias para que el usuario identifique en todo momento si está
   seleccionando una acción, revisando estado, confirmando una operación o viendo
   un resultado final.
+- **FR-019**: El sistema MUST incluir en el home una opción adicional de
+  navegación hacia una vista independiente de logs.
+- **FR-020**: El sistema MUST mostrar en la vista de logs un historial legible
+  de eventos recientes relevantes para el usuario, incluyendo acciones
+  ejecutadas, resultados y fallos.
+- **FR-021**: El sistema MUST presentar en los logs el motivo exacto disponible
+  para cada error o advertencia, evitando mensajes genéricos cuando exista una
+  causa más precisa.
+- **FR-022**: El sistema MUST permitir que el usuario identifique en cada log,
+  como mínimo, qué ocurrió, cuál fue el resultado y en qué contexto del flujo
+  sucedió.
+- **FR-023**: El sistema MUST mostrar un estado vacío comprensible cuando el
+  usuario abra la vista de logs y todavía no existan eventos relevantes.
+- **FR-024**: El sistema MUST mantener la vista de logs dentro del mismo modelo
+  de navegación por vistas separadas, con retorno explícito al home o a un paso
+  claro de continuación.
+- **FR-025**: El sistema MUST conservar los mensajes finales breves en las
+  vistas operativas, pero complementar esos mensajes con mayor detalle en la
+  vista de logs para dar trazabilidad y control al usuario.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -171,6 +227,11 @@ funcionales existentes.
   una vista independiente para ejecutar o consultar una capacidad concreta.
 - **Operation Result**: Representa el resultado final mostrado al usuario tras
   ejecutar una acción, incluyendo éxito, advertencia, error y siguiente paso.
+- **Log View**: Representa la vista independiente desde la cual el usuario puede
+  revisar eventos recientes, resultados operativos y errores con detalle.
+- **Log Entry**: Representa un registro visible para el usuario sobre una acción,
+  evento, advertencia o error, incluyendo contexto suficiente para entender qué
+  pasó y por qué.
 - **Visual Cue Set**: Representa el conjunto de recursos visuales del terminal
   usados para comunicar jerarquía, estado, progreso y énfasis de forma
   consistente.
@@ -187,6 +248,9 @@ funcionales existentes.
 - Se asume que las acciones principales actuales del flujo interactivo siguen
   siendo las capacidades prioritarias que deben mantenerse disponibles tras el
   rediseño.
+- Se asume que los logs visibles para el usuario se centran en trazabilidad
+  operativa y diagnóstico dentro del CLI, no en exponer información sensible ni
+  detalles internos irrelevantes para la toma de decisiones.
 - La mejora visual debe reforzar comprensión y confianza, no introducir nuevas
   tareas, permisos ni cambios de lógica de negocio.
 - La retirada de la experiencia anterior de pantalla completa aplica a la
@@ -216,3 +280,8 @@ funcionales existentes.
   rediseño.
 - **SC-007**: Al menos el 85% de los usuarios de prueba califican la experiencia
   interactiva como más clara y coherente que la versión anterior.
+- **SC-008**: El 100% de los errores validados en los flujos principales pueden
+  revisarse posteriormente desde la vista de logs con una causa específica y un
+  contexto reconocible por el usuario.
+- **SC-009**: Al menos el 90% de los usuarios de prueba logra identificar desde
+  la vista de logs qué acción falló y por qué, en menos de 30 segundos.

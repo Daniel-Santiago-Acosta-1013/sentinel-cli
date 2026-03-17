@@ -382,10 +382,10 @@ impl SentinelApp {
                 _ => None,
             },
             Route::Confirm(ConfirmationAction::EnableProtection) => Some(
-                "Activando proteccion y preparando snapshot recuperable...".to_owned(),
+                "Activando Sentinel y preparando snapshot recuperable...".to_owned(),
             ),
             Route::Confirm(ConfirmationAction::DisableProtection) => {
-                Some("Desactivando proteccion y restaurando la red...".to_owned())
+                Some("Desactivando Sentinel y restaurando la red...".to_owned())
             }
             Route::Confirm(ConfirmationAction::RecoverNetwork) => {
                 Some("Recuperando la red y verificando el resultado...".to_owned())
@@ -442,8 +442,8 @@ impl SentinelApp {
 
         if session.runtime_state.mode == ProtectionMode::Active {
             session.show_result(
-                "Proteccion activada",
-                "Sentinel activo la proteccion con un resultado visible y una ruta clara para continuar.",
+                "Sentinel activado",
+                "Sentinel quedo activo con un resultado visible y una ruta clara para continuar.",
                 "Pulsa Enter para volver al inicio o baja a Salir.",
                 ResultTone::Success,
             );
@@ -482,7 +482,7 @@ impl SentinelApp {
             ResultTone::Success
         };
         let title = if tone == ResultTone::Success {
-            "Proteccion desactivada"
+            "Sentinel desactivado"
         } else {
             "Desactivacion con advertencias"
         };

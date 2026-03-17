@@ -66,9 +66,9 @@ pub fn action_label(action: MenuActionId, mode: ProtectionMode) -> String {
         MenuActionId::RunSafetyChecks => "Ejecutar chequeos de seguridad".to_owned(),
         MenuActionId::ToggleProtection => {
             if mode == ProtectionMode::Active {
-                "Desactivar proteccion".to_owned()
+                "Desactivar Sentinel".to_owned()
             } else {
-                "Activar proteccion".to_owned()
+                "Activar Sentinel".to_owned()
             }
         }
         MenuActionId::ViewStatus => "Ver estado actual".to_owned(),
@@ -88,11 +88,11 @@ pub fn action_description(action: MenuActionId, mode: ProtectionMode) -> String 
                 .to_owned()
         }
         MenuActionId::ToggleProtection if mode == ProtectionMode::Active => {
-            "Restaura la configuracion original y detiene la proteccion actual."
+            "Restaura la configuracion original y detiene Sentinel."
                 .to_owned()
         }
         MenuActionId::ToggleProtection => {
-            "Activa la proteccion con snapshot recuperable y runtime DNS local."
+            "Inicia Sentinel y activa el bloqueo DNS local con snapshot recuperable."
                 .to_owned()
         }
         MenuActionId::ViewStatus => {
@@ -122,8 +122,8 @@ pub fn action_description(action: MenuActionId, mode: ProtectionMode) -> String 
 
 pub fn confirmation_heading(action: ConfirmationAction) -> &'static str {
     match action {
-        ConfirmationAction::EnableProtection => "Activar proteccion",
-        ConfirmationAction::DisableProtection => "Desactivar proteccion",
+        ConfirmationAction::EnableProtection => "Activar Sentinel",
+        ConfirmationAction::DisableProtection => "Desactivar Sentinel",
         ConfirmationAction::RecoverNetwork => "Recuperar red",
     }
 }

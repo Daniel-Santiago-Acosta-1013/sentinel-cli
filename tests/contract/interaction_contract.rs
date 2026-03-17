@@ -10,7 +10,7 @@ fn starts_from_home_screen_without_flags() {
         .success()
         .stdout(contains("____"))
         .stdout(contains("◆ Inicio"))
-        .stdout(contains("Activar proteccion"))
+        .stdout(contains("Activar Sentinel"))
         .stdout(contains("Salir de Sentinel"));
 }
 
