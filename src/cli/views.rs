@@ -2,7 +2,7 @@ use crate::cli::{
     copy,
     logo::SENTINEL_ASCII_LOGO,
     menu_state::MenuSession,
-    navigation::{MenuAction, MenuActionId, Route},
+    navigation::{LogScope, MenuAction, MenuActionId, Route},
     output, spinner,
     styles::{self, StyleProfile},
 };
@@ -16,6 +16,7 @@ pub fn render(
         Route::Home => render_home(session, terminal_width, profile),
         Route::Safety => render_detail(session, terminal_width, profile),
         Route::Status => render_detail(session, terminal_width, profile),
+        Route::Logs(_) => render_logs(session, terminal_width, profile),
         Route::Recovery => render_recovery(session, terminal_width, profile),
         Route::Confirm(_) => render_confirmation(session, profile),
         Route::Progress => render_progress(session, terminal_width, profile),
@@ -89,6 +90,53 @@ fn render_detail(
         body,
         copy::intro_text(session.route, session.runtime_state.mode),
     )
+}
+
+fn render_logs(
+    session: &MenuSession,
+    terminal_width: usize,
+    profile: StyleProfile,
+) -> String {
+    let scope = session.log_scope().expect("logs route requires scope");
+    let filtered_events = match scope {
+        LogScope::Safety => session
+            .recent_events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.kind,
+                    crate::storage::events::EventKind::SafetyCheck
+                        | crate::storage::events::EventKind::Error
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>(),
+        LogScope::Status => session.recent_events.clone(),
+    };
+    let empty_copy = match scope {
+        LogScope::Safety => "No hay logs recientes del chequeo para mostrar.",
+        LogScope::Status => "No hay logs recientes de Sentinel para mostrar.",
+    };
+
+    let mut lines = vec![
+        styles::section_title(copy::route_title(session.route), profile),
+        copy::intro_text(session.route, session.runtime_state.mode).to_owned(),
+        String::new(),
+        output::render_log_panel_stream(
+            &filtered_events,
+            empty_copy,
+            terminal_width,
+            profile,
+        ),
+        String::new(),
+        styles::muted(&session.last_message, profile),
+        String::new(),
+        styles::section_title("Continuar", profile),
+    ];
+    lines.extend(render_menu(&session.actions(), session.selected_index, profile));
+    lines.push(String::new());
+    lines.push(styles::muted(copy::footer_hint(session.route), profile));
+    lines.join("\n")
 }
 
 fn render_recovery(

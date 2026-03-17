@@ -26,12 +26,37 @@ pub enum EventKind {
     Error,
 }
 
+impl EventKind {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::SafetyCheck => "Chequeo de seguridad",
+            Self::Enable => "Activacion de Sentinel",
+            Self::Disable => "Desactivacion de Sentinel",
+            Self::Recover => "Recuperacion de red",
+            Self::Install => "Instalacion",
+            Self::Update => "Actualizacion",
+            Self::Reinstall => "Reinstalacion",
+            Self::Error => "Error operativo",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     Info,
     Warning,
     Error,
+}
+
+impl Severity {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Info => "Info",
+            Self::Warning => "Advertencia",
+            Self::Error => "Error",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,14 +106,14 @@ impl EventStore {
             crate::storage::state::SafetyStatus::Warn => Severity::Warning,
             crate::storage::state::SafetyStatus::Fail => Severity::Error,
         };
-        self.append(EventRecord::new(
-            EventKind::SafetyCheck,
-            severity,
-            summary.recommended_action.clone(),
-        ))
+        let message = if summary.issues.is_empty() {
+            summary.recommended_action.clone()
+        } else {
+            summary.issues.join(" | ")
+        };
+        self.append(EventRecord::new(EventKind::SafetyCheck, severity, message))
     }
 
-    #[allow(dead_code)]
     pub fn read_recent(&self, limit: usize) -> AppResult<Vec<EventRecord>> {
         if !self.paths.events_file.exists() {
             return Ok(Vec::new());

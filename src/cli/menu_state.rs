@@ -1,6 +1,7 @@
 use crate::{
     blocking::blocklist::BlocklistBundle,
     storage::{
+        events::EventRecord,
         install::InstallationState,
         state::{ProtectionMode, RiskLevel, RuntimeState},
     },
@@ -9,7 +10,8 @@ use crate::{
 use super::{
     copy,
     navigation::{
-        ConfirmationAction, MenuAction, MenuActionId, ResultTone, Route, default_route,
+        ConfirmationAction, LogScope, MenuAction, MenuActionId, ResultTone, Route,
+        default_route,
     },
 };
 
@@ -30,6 +32,7 @@ pub struct MenuSession {
     pub last_message: String,
     pub runtime_state: RuntimeState,
     pub install_state: InstallationState,
+    pub recent_events: Vec<EventRecord>,
     pub transcript_mode: bool,
     pub last_result: Option<OperationResult>,
     pub progress_label: Option<String>,
@@ -40,6 +43,7 @@ impl MenuSession {
     pub fn from_runtime_state(
         mut runtime_state: RuntimeState,
         install_state: InstallationState,
+        recent_events: Vec<EventRecord>,
         blocklist: &BlocklistBundle,
         transcript_mode: bool,
     ) -> Self {
@@ -58,6 +62,7 @@ impl MenuSession {
             last_message,
             runtime_state,
             install_state,
+            recent_events,
             transcript_mode,
             last_result: None,
             progress_label: None,
@@ -106,6 +111,70 @@ impl MenuSession {
                     ),
                     copy::action_description(
                         MenuActionId::RecoverNetwork,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::Exit,
+                    copy::action_label(MenuActionId::Exit, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Exit, self.runtime_state.mode),
+                ),
+            ],
+            Route::Safety => vec![
+                action(
+                    MenuActionId::ViewLogs,
+                    copy::action_label(MenuActionId::ViewLogs, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::ViewLogs,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::BackHome,
+                    copy::action_label(MenuActionId::BackHome, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::BackHome,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::Exit,
+                    copy::action_label(MenuActionId::Exit, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Exit, self.runtime_state.mode),
+                ),
+            ],
+            Route::Status => vec![
+                action(
+                    MenuActionId::ViewLogs,
+                    copy::action_label(MenuActionId::ViewLogs, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::ViewLogs,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::BackHome,
+                    copy::action_label(MenuActionId::BackHome, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::BackHome,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::Exit,
+                    copy::action_label(MenuActionId::Exit, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Exit, self.runtime_state.mode),
+                ),
+            ],
+            Route::Logs(_) => vec![
+                action(
+                    MenuActionId::BackToPrevious,
+                    copy::action_label(
+                        MenuActionId::BackToPrevious,
+                        self.runtime_state.mode,
+                    ),
+                    copy::action_description(
+                        MenuActionId::BackToPrevious,
                         self.runtime_state.mode,
                     ),
                 ),
@@ -253,6 +322,19 @@ impl MenuSession {
             .clone()
             .unwrap_or_else(|| self.last_message.clone());
         self.runtime_state = runtime_state;
+    }
+
+    pub fn sync_recent_events(&mut self, recent_events: Vec<EventRecord>) {
+        self.recent_events = recent_events;
+    }
+
+    pub fn log_scope(&self) -> Option<LogScope> {
+        match self.route {
+            Route::Logs(scope) => Some(scope),
+            Route::Safety => Some(LogScope::Safety),
+            Route::Status => Some(LogScope::Status),
+            _ => None,
+        }
     }
 }
 

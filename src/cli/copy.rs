@@ -1,6 +1,6 @@
 use crate::{install::version, storage::state::ProtectionMode};
 
-use super::navigation::{ConfirmationAction, MenuActionId, Route};
+use super::navigation::{ConfirmationAction, LogScope, MenuActionId, Route};
 
 pub fn app_subtitle() -> String {
     format!("Version {}", version::current_version())
@@ -11,6 +11,8 @@ pub fn route_title(route: Route) -> &'static str {
         Route::Home => "Inicio",
         Route::Safety => "Chequeos de seguridad",
         Route::Status => "Estado de Sentinel",
+        Route::Logs(LogScope::Safety) => "Logs del chequeo",
+        Route::Logs(LogScope::Status) => "Logs de Sentinel",
         Route::Recovery => "Recuperacion",
         Route::Confirm(_) => "Confirmacion",
         Route::Progress => "Procesando",
@@ -34,6 +36,12 @@ pub fn intro_text(route: Route, mode: ProtectionMode) -> &'static str {
         }
         Route::Status => {
             "Consulta el estado actual de Sentinel, su runtime, el snapshot y los siguientes pasos."
+        }
+        Route::Logs(LogScope::Safety) => {
+            "Revisa los eventos exactos del ultimo chequeo para diagnosticar fallos y decidir el siguiente paso."
+        }
+        Route::Logs(LogScope::Status) => {
+            "Revisa los eventos recientes de Sentinel con su severidad, momento y mensaje exacto."
         }
         Route::Recovery => {
             "Usa esta vista para recuperar la red o revisar el estado cuando Sentinel detecta un problema."
@@ -68,7 +76,9 @@ pub fn action_label(action: MenuActionId, mode: ProtectionMode) -> String {
             }
         }
         MenuActionId::ViewStatus => "Ver estado de Sentinel".to_owned(),
+        MenuActionId::ViewLogs => "Logs".to_owned(),
         MenuActionId::RecoverNetwork => "Recuperar red".to_owned(),
+        MenuActionId::BackToPrevious => "Volver a la vista anterior".to_owned(),
         MenuActionId::BackHome => "Volver al inicio".to_owned(),
         MenuActionId::Exit => "Salir de Sentinel".to_owned(),
         MenuActionId::Confirm => "Confirmar accion".to_owned(),
@@ -94,9 +104,16 @@ pub fn action_description(action: MenuActionId, mode: ProtectionMode) -> String 
             "Muestra el estado actual de Sentinel, su runtime, el snapshot y la instalacion."
                 .to_owned()
         }
+        MenuActionId::ViewLogs => {
+            "Abre una vista independiente con logs exactos de eventos y errores."
+                .to_owned()
+        }
         MenuActionId::RecoverNetwork => {
             "Intenta restaurar la red y verificar que coincide con el snapshot original."
                 .to_owned()
+        }
+        MenuActionId::BackToPrevious => {
+            "Regresa a la vista anterior sin perder el contexto actual.".to_owned()
         }
         MenuActionId::BackHome => {
             "Vuelve al inicio limpio para elegir otra accion.".to_owned()

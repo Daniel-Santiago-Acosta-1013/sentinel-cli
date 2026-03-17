@@ -37,3 +37,19 @@ fn unsafe_activation_is_blocked_when_safety_fails() {
         .stdout(contains("Proteccion: Degradada"))
         .stdout(contains("ya esta en uso por otro proceso"));
 }
+
+#[test]
+fn status_view_surfaces_recent_logs_with_exact_context() {
+    let home = temp_home();
+    let port = next_port();
+    let mut command =
+        scripted_command(&home, "enter,back,down,down,enter,enter,exit", port);
+    command.env("SENTINEL_SIMULATE_BUSY_PORT", "1");
+    command
+        .assert()
+        .success()
+        .stdout(contains("◆ Estado de Sentinel"))
+        .stdout(contains("◆ Logs de Sentinel"))
+        .stdout(contains("Chequeo de seguridad"))
+        .stdout(contains("ya esta en uso por otro proceso."));
+}

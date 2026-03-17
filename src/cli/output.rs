@@ -1,4 +1,6 @@
-use crate::storage::{install::InstallationState, state::RuntimeState};
+use crate::storage::{
+    events::EventRecord, install::InstallationState, state::RuntimeState,
+};
 
 use super::styles::StyleProfile;
 
@@ -121,6 +123,27 @@ pub fn render_recovery_table(
     render_table("Recuperacion", "Valor", &rows, terminal_width, profile)
 }
 
+pub fn render_log_panel_stream(
+    events: &[EventRecord],
+    empty_copy: &str,
+    terminal_width: usize,
+    profile: StyleProfile,
+) -> String {
+    let width = terminal_width.saturating_sub(10).clamp(40, 84);
+    let mut body_lines = Vec::new();
+    if events.is_empty() {
+        body_lines.push(empty_copy.to_owned());
+    } else {
+        for (index, event) in events.iter().take(8).enumerate() {
+            if index > 0 {
+                body_lines.push(String::new());
+            }
+            body_lines.extend(render_event_entry(event, width));
+        }
+    }
+    render_log_panel(&body_lines, width, profile)
+}
+
 fn render_table(
     left_header: &str,
     right_header: &str,
@@ -225,4 +248,72 @@ fn truncate(value: &str, width: usize) -> String {
 
 fn join_or_dash(items: &[String]) -> String {
     if items.is_empty() { "-".to_owned() } else { items.join(", ") }
+}
+
+fn render_event_entry(event: &EventRecord, width: usize) -> Vec<String> {
+    let mut lines = vec![format!(
+        "[{}] {:<11} {}",
+        event.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+        event.severity.label().to_uppercase(),
+        event.kind.label()
+    )];
+    for line in wrap_text(&event.message, width) {
+        lines.push(format!("  {line}"));
+    }
+    lines
+}
+
+fn wrap_text(value: &str, width: usize) -> Vec<String> {
+    if value.is_empty() || width < 12 {
+        return vec![value.to_owned()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in value.split_whitespace() {
+        let candidate_len = current.chars().count()
+            + if current.is_empty() { 0 } else { 1 }
+            + word.chars().count();
+        if candidate_len > width && !current.is_empty() {
+            lines.push(current);
+            current = word.to_owned();
+        } else if current.is_empty() {
+            current = word.to_owned();
+        } else {
+            current.push(' ');
+            current.push_str(word);
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+fn render_log_panel(lines: &[String], width: usize, profile: StyleProfile) -> String {
+    let (top_left, top_right, bottom_left, bottom_right, horiz, vert) = if profile.unicode
+    {
+        ('┌', '┐', '└', '┘', '─', '│')
+    } else {
+        ('+', '+', '+', '+', '-', '|')
+    };
+
+    let mut rendered = Vec::new();
+    rendered
+        .push(format!("{top_left}{}{top_right}", horiz.to_string().repeat(width + 2)));
+    for line in lines {
+        if line.is_empty() {
+            rendered.push(format!("{vert} {:width$} {vert}", "", width = width));
+            continue;
+        }
+        for wrapped in wrap_text(line, width) {
+            rendered.push(format!("{vert} {:width$} {vert}", wrapped, width = width));
+        }
+    }
+    rendered.push(format!(
+        "{bottom_left}{}{bottom_right}",
+        horiz.to_string().repeat(width + 2)
+    ));
+    rendered.join("\n")
 }

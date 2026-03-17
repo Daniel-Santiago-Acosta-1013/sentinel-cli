@@ -16,7 +16,7 @@ use crate::{
         InputEvent,
         menu_state::MenuSession,
         navigation::{
-            ConfirmationAction, MenuActionId, ResultTone, Route, default_route,
+            ConfirmationAction, LogScope, MenuActionId, ResultTone, Route, default_route,
         },
         parse_script, renderer,
         terminal::TerminalSession,
@@ -228,9 +228,11 @@ impl SentinelApp {
     fn load_session(&self, transcript_mode: bool) -> AppResult<MenuSession> {
         let state = self.state_store.load()?;
         let install = self.install_store.inspect_current()?;
+        let recent_events = self.event_store.read_recent(20)?;
         Ok(MenuSession::from_runtime_state(
             state,
             install,
+            recent_events,
             &self.blocklist,
             transcript_mode,
         ))
@@ -272,6 +274,12 @@ impl SentinelApp {
                 session.last_message =
                     "La accion sensible fue cancelada antes de cambiar la red."
                         .to_owned();
+            }
+            Route::Logs(scope) => {
+                session.route = log_parent_route(scope);
+                session.selected_index = 0;
+                session.last_message =
+                    "Volviste a la vista anterior sin perder el contexto.".to_owned();
             }
             Route::Result | Route::Safety | Route::Status => {
                 session.route = Route::Home;
@@ -315,6 +323,15 @@ impl SentinelApp {
                 self.refresh_status(session)?;
                 Ok(false)
             }
+            MenuActionId::ViewLogs => {
+                if let Some(scope) = session.log_scope() {
+                    session.route = Route::Logs(scope);
+                    session.selected_index = 0;
+                    session.last_message =
+                        "Revisa los logs y vuelve cuando termines.".to_owned();
+                }
+                Ok(false)
+            }
             MenuActionId::RecoverNetwork => {
                 session.route = Route::Confirm(ConfirmationAction::RecoverNetwork);
                 session.selected_index = 0;
@@ -329,6 +346,15 @@ impl SentinelApp {
                 session.last_result = None;
                 session.last_message =
                     "Volviste al inicio para revisar otra vista o accion.".to_owned();
+                Ok(false)
+            }
+            MenuActionId::BackToPrevious => {
+                if let Some(scope) = session.log_scope() {
+                    session.route = log_parent_route(scope);
+                    session.selected_index = 0;
+                    session.last_message =
+                        "Volviste a la vista anterior sin perder el contexto.".to_owned();
+                }
                 Ok(false)
             }
             MenuActionId::Exit => self.exit_session(session),
@@ -408,6 +434,7 @@ impl SentinelApp {
         self.event_store.record_safety(&summary)?;
 
         session.sync_runtime_state(next_state);
+        self.refresh_recent_events(session)?;
         session.route = if matches!(
             session.runtime_state.mode,
             ProtectionMode::Degraded | ProtectionMode::Recovering
@@ -435,6 +462,7 @@ impl SentinelApp {
         );
         let next_state = controller.enable().await?;
         session.sync_runtime_state(next_state);
+        self.refresh_recent_events(session)?;
 
         if session.runtime_state.mode == ProtectionMode::Active {
             session.show_result(
@@ -468,6 +496,7 @@ impl SentinelApp {
         );
         let next_state = controller.disable().await?;
         session.sync_runtime_state(next_state);
+        self.refresh_recent_events(session)?;
 
         let tone = if matches!(
             session.runtime_state.mode,
@@ -504,6 +533,7 @@ impl SentinelApp {
         );
         let next_state = controller.recover().await?;
         session.sync_runtime_state(next_state);
+        self.refresh_recent_events(session)?;
 
         let (title, tone) = match session.runtime_state.last_verification_result.as_ref()
         {
@@ -551,12 +581,18 @@ impl SentinelApp {
         let install = self.install_store.inspect_current()?;
         session.sync_runtime_state(state);
         session.install_state = install;
+        self.refresh_recent_events(session)?;
         session.route = Route::Status;
         session.selected_index = 0;
         session.last_result = None;
         session.last_message =
             "Estado actualizado desde el runtime persistido, seguridad e instalacion."
                 .to_owned();
+        Ok(())
+    }
+
+    fn refresh_recent_events(&self, session: &mut MenuSession) -> AppResult<()> {
+        session.sync_recent_events(self.event_store.read_recent(20)?);
         Ok(())
     }
 }
@@ -581,6 +617,13 @@ fn back_route_for(mode: ProtectionMode) -> Route {
         Route::Recovery
     } else {
         default_route(mode)
+    }
+}
+
+fn log_parent_route(scope: LogScope) -> Route {
+    match scope {
+        LogScope::Safety => Route::Safety,
+        LogScope::Status => Route::Status,
     }
 }
 

@@ -8,10 +8,17 @@ pub enum ConfirmationAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogScope {
+    Safety,
+    Status,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
     Home,
     Safety,
     Status,
+    Logs(LogScope),
     Recovery,
     Confirm(ConfirmationAction),
     Progress,
@@ -24,7 +31,9 @@ pub enum MenuActionId {
     RunSafetyChecks,
     ToggleProtection,
     ViewStatus,
+    ViewLogs,
     RecoverNetwork,
+    BackToPrevious,
     BackHome,
     Exit,
     Confirm,
