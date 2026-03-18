@@ -1,8 +1,8 @@
 .codex/
 target/
 .DS_Store
-debug/
-release/
+/debug/
+/release/
 *.rs.bk
 *.rlib
 *.prof*
