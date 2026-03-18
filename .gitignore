@@ -13,3 +13,5 @@ Thumbs.db
 *.tmp
 *.swp
 .vscode/
+.release-artifacts/
+packaging/npm/.stage/

@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate release authorization
+        id: authorize
+        run: sh scripts/release/authorize_release.sh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Stop on blocked release
+        if: steps.authorize.outputs.AUTHORIZED != 'true'
+        run: |
+          echo "Release blocked before publication"
+          echo "Reason: ${{ steps.authorize.outputs.BLOCK_REASON }}"
+
+      - name: Build canonical artifacts
+        if: steps.authorize.outputs.AUTHORIZED == 'true'
+        id: build
+        run: sh scripts/release/build_release_artifacts.sh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG_COMMIT: ${{ steps.authorize.outputs.TAG_COMMIT }}
+
+      - name: Revalidate authorization before publication
+        if: steps.authorize.outputs.AUTHORIZED == 'true'
+        id: reauthorize
+        run: sh scripts/release/authorize_release.sh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Publish canonical GitHub release
+        if: steps.reauthorize.outputs.AUTHORIZED == 'true'
+        id: github_release
+        run: sh scripts/release/publish_github_release.sh
+        env:
+          RELEASE_MANIFEST_PATH: ${{ steps.build.outputs.MANIFEST_PATH }}
+
+      - name: Publish npm package
+        if: steps.reauthorize.outputs.AUTHORIZED == 'true'
+        id: npm_publish
+        run: sh scripts/release/publish_npm.sh
+        env:
+          RELEASE_MANIFEST_PATH: ${{ steps.build.outputs.MANIFEST_PATH }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Homebrew formula
+        if: steps.reauthorize.outputs.AUTHORIZED == 'true'
+        id: homebrew_publish
+        run: sh scripts/release/publish_homebrew.sh
+        env:
+          RELEASE_MANIFEST_PATH: ${{ steps.build.outputs.MANIFEST_PATH }}
+          HOMEBREW_TAP_PATH: ${{ runner.temp }}/homebrew-tap
+
+      - name: Inspect final release state
+        if: always() && steps.reauthorize.outputs.AUTHORIZED == 'true'
+        id: inspect
+        run: sh scripts/release/inspect_release_state.sh
+
+      - name: Summarize release
+        if: always()
+        run: sh scripts/release/summarize_release.sh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG_COMMIT: ${{ steps.authorize.outputs.TAG_COMMIT }}
+          RELEASE_MAIN_HEAD: ${{ steps.authorize.outputs.MAIN_HEAD }}
+          RELEASE_VERSION: ${{ steps.build.outputs.RELEASE_VERSION }}
+          AUTHORIZED: ${{ steps.reauthorize.outputs.AUTHORIZED || steps.authorize.outputs.AUTHORIZED }}
+          BLOCK_REASON: ${{ steps.reauthorize.outputs.BLOCK_REASON || steps.authorize.outputs.BLOCK_REASON }}

@@ -1,0 +1,17 @@
+{
+  "name": "sentinel-cli",
+  "version": "__VERSION__",
+  "description": "System-level CLI ad blocker with safe recovery workflows",
+  "license": "UNLICENSED",
+  "bin": {
+    "sentinel": "bin/sentinel"
+  },
+  "files": [
+    "README.md",
+    "bin/sentinel"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ]
+}

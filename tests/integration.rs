@@ -9,6 +9,8 @@ mod install_existing;
 mod install_fresh;
 #[path = "integration/interactive_activation.rs"]
 mod interactive_activation;
+#[path = "integration/release_pipeline.rs"]
+mod release_pipeline;
 #[path = "integration/recovery_flow.rs"]
 mod recovery_flow;
 #[path = "integration/safety_failures.rs"]

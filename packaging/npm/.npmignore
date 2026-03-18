@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+coverage/
+specs/
+tests/
+src/
+scripts/
+target/
+.git/
+.github/
+.specify/
+*.log
+.env*

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod release_fixtures;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -65,7 +67,7 @@ pub fn install_command(install_dir: &Path, source_bin: &Path) -> Command {
 }
 
 pub fn cargo_binary() -> PathBuf {
-    PathBuf::from(assert_cmd::cargo::cargo_bin("sentinel"))
+    assert_cmd::cargo::cargo_bin("sentinel")
 }
 
 pub fn installed_binary(install_dir: &Path) -> PathBuf {
