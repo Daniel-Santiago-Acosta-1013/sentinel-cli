@@ -56,6 +56,7 @@ jobs:
         id: github_release
         run: sh scripts/release/publish_github_release.sh
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_MANIFEST_PATH: ${{ steps.build.outputs.MANIFEST_PATH }}
 
       - name: Publish npm package
@@ -72,6 +73,8 @@ jobs:
         run: sh scripts/release/publish_homebrew.sh
         env:
           RELEASE_MANIFEST_PATH: ${{ steps.build.outputs.MANIFEST_PATH }}
+          HOMEBREW_TAP_REPO: Daniel-Santiago-Acosta-1013/homebrew-tap
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           HOMEBREW_TAP_PATH: ${{ runner.temp }}/homebrew-tap
 
       - name: Inspect final release state
