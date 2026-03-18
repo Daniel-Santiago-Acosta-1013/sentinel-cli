@@ -38,7 +38,19 @@ Para desarrollo y pruebas no destructivas puedes ejecutar Sentinel con
 
 ## Instalación
 
-### Opción 1: usar el instalador del repositorio
+### Opción 1: npm
+
+```bash
+npm install -g @daniel_santiago/sentinel-cli
+```
+
+### Opción 2: Homebrew
+
+```bash
+brew install Daniel-Santiago-Acosta-1013/homebrew-tap/sentinel
+```
+
+### Opción 3: usar el instalador del repositorio
 
 ```bash
 sh scripts/install-sentinel.sh
@@ -49,7 +61,7 @@ El instalador:
 - valida el binario antes de reemplazar el ejecutable anterior
 - instala `sentinel` en un directorio invocable por PATH
 
-### Opción 2: ejecutar desde código fuente
+### Opción 4: ejecutar desde código fuente
 
 ```bash
 cargo run
