@@ -12,6 +12,14 @@ pub fn release_tempdir() -> TempDir {
     tempfile::tempdir().expect("release tempdir")
 }
 
+pub fn current_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+pub fn current_tag() -> String {
+    format!("v{}", current_version())
+}
+
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -63,7 +71,10 @@ pub fn create_mock_binary(dir: &Path) -> PathBuf {
     let path = dir.join("sentinel");
     fs::write(
         &path,
-        "#!/bin/sh\nif [ \"${SENTINEL_INTERNAL_MODE:-}\" = \"print-version\" ]; then\n  echo 0.1.1\n  exit 0\nfi\necho sentinel\n",
+        format!(
+            "#!/bin/sh\nif [ \"${{SENTINEL_INTERNAL_MODE:-}}\" = \"print-version\" ]; then\n  echo {}\n  exit 0\nfi\necho sentinel\n",
+            current_version()
+        ),
     )
     .expect("write mock sentinel");
     #[cfg(unix)]
@@ -91,4 +102,75 @@ pub fn create_archive_with_binary(archive: &Path, binary: &Path) {
         .status()
         .expect("create tar archive");
     assert!(status.success(), "tar should succeed");
+}
+
+pub fn create_release_repo_fixture() -> TempDir {
+    let repo = release_tempdir();
+    fs::create_dir_all(repo.path().join("packaging/npm")).expect("create npm dir");
+    fs::create_dir_all(repo.path().join("packaging/homebrew"))
+        .expect("create homebrew dir");
+    fs::create_dir_all(repo.path().join("docs/npm")).expect("create docs/npm dir");
+
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"sentinel\"\nversion = \"{}\"\nedition = \"2024\"\n",
+            current_version()
+        ),
+    )
+    .expect("write Cargo.toml");
+    fs::write(
+        repo.path().join("packaging/npm/package.json"),
+        format!(
+            "{{\n  \"name\": \"@daniel_santiago/sentinel-cli\",\n  \"version\": \"{}\"\n}}\n",
+            current_version()
+        ),
+    )
+    .expect("write package.json");
+    fs::write(
+        repo.path().join("packaging/npm/.npmignore"),
+        "node_modules/\n.DS_Store\n",
+    )
+    .expect("write .npmignore");
+    fs::write(
+        repo.path().join("packaging/homebrew/sentinel.rb.tpl"),
+        format!(
+            "class Sentinel < Formula\n  version \"{}\"\n  url \"__ARCHIVE_URL__\"\n  sha256 \"__SHA256__\"\nend\n",
+            current_version()
+        ),
+    )
+    .expect("write formula template");
+    fs::write(repo.path().join("docs/npm/README.md"), "# Sentinel\n")
+        .expect("write docs npm readme");
+    fs::write(repo.path().join("LICENSE"), "Apache-2.0\n").expect("write license");
+
+    ProcessCommand::new("git")
+        .arg("init")
+        .arg("-b")
+        .arg("main")
+        .current_dir(repo.path())
+        .status()
+        .expect("git init");
+    ProcessCommand::new("git")
+        .args(["config", "user.name", "Fixture Bot"])
+        .current_dir(repo.path())
+        .status()
+        .expect("git config user.name");
+    ProcessCommand::new("git")
+        .args(["config", "user.email", "fixture@example.com"])
+        .current_dir(repo.path())
+        .status()
+        .expect("git config user.email");
+    ProcessCommand::new("git")
+        .args(["add", "."])
+        .current_dir(repo.path())
+        .status()
+        .expect("git add");
+    ProcessCommand::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(repo.path())
+        .status()
+        .expect("git commit");
+
+    repo
 }

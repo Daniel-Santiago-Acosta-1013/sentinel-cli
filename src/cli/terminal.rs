@@ -2,7 +2,7 @@ use std::io::{Stdout, Write, stdout};
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{self, ClearType},
 };
@@ -82,9 +82,15 @@ impl TerminalSession {
                 KeyCode::Up => Some(InputEvent::Up),
                 KeyCode::Down => Some(InputEvent::Down),
                 KeyCode::Enter => Some(InputEvent::Confirm),
+                KeyCode::Backspace => Some(InputEvent::Backspace),
                 KeyCode::Esc => Some(InputEvent::Back),
                 KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'q') => {
                     Some(InputEvent::Exit)
+                }
+                KeyCode::Char(ch)
+                    if !key_event.modifiers.contains(KeyModifiers::CONTROL) =>
+                {
+                    Some(InputEvent::InsertChar(ch))
                 }
                 _ => None,
             };

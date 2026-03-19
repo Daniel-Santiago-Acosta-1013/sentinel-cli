@@ -12,7 +12,7 @@ use tracing::{error, info};
 use crate::{
     app::AppPaths,
     blocking::{blocklist::BlocklistBundle, resolver},
-    storage::config::ConfigStore,
+    storage::{blocked_domains::BlockedDomainsStore, config::ConfigStore, events::EventStore},
 };
 
 pub async fn run_runtime(paths: AppPaths) -> Result<()> {
@@ -20,17 +20,32 @@ pub async fn run_runtime(paths: AppPaths) -> Result<()> {
     let upstream: SocketAddr = config.upstream_dns.parse().into_diagnostic()?;
     let bind_addr = paths.runtime_addr()?;
     let socket = UdpSocket::bind(bind_addr).await.into_diagnostic()?;
-    BlocklistBundle::sync_mirror(&paths.blocklist_file)?;
-    let blocklist = BlocklistBundle::load_from_path(&paths.blocklist_file)?;
+    BlockedDomainsStore::new(paths.blocklist_file.clone()).ensure_seeded()?;
+    let event_store = EventStore::new(paths.clone());
     info!("runtime listening on {bind_addr}");
 
     let mut buffer = [0u8; 4096];
     loop {
         let (size, addr) = socket.recv_from(&mut buffer).await.into_diagnostic()?;
         let payload = buffer[..size].to_vec();
+        let blocklist = match BlocklistBundle::load_from_path(&paths.blocklist_file) {
+            Ok(blocklist) => blocklist,
+            Err(err) => {
+                error!("blocklist reload failed: {err:?}");
+                continue;
+            }
+        };
         match resolver::handle_query(&payload, upstream, &blocklist).await {
-            Ok(response) => {
-                socket.send_to(&response, addr).await.into_diagnostic()?;
+            Ok(resolution) => {
+                if let Some(domain) = resolution.blocked_domain.as_deref()
+                    && let Err(err) = event_store.record_blocked_domain(domain)
+                {
+                    error!("failed to record blocked domain event: {err:?}");
+                }
+                socket
+                    .send_to(&resolution.payload, addr)
+                    .await
+                    .into_diagnostic()?;
             }
             Err(err) => {
                 error!("dns handling failed: {err:?}");

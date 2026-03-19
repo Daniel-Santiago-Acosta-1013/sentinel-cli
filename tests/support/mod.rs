@@ -4,11 +4,19 @@ pub mod release_fixtures;
 
 use std::{
     fs,
+    net::UdpSocket,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU16, Ordering},
+    thread,
+    time::Duration,
 };
 
 use assert_cmd::Command;
+use hickory_proto::{
+    op::{Message, Query, ResponseCode},
+    rr::{Name, RecordType},
+    serialize::binary::{BinEncodable, BinEncoder},
+};
 use tempfile::TempDir;
 
 static NEXT_PORT: AtomicU16 = AtomicU16::new(19053);
@@ -53,7 +61,7 @@ pub fn round_trip_activation_script() -> &'static str {
 }
 
 pub fn recovery_script() -> &'static str {
-    "down,down,enter,enter,enter,exit"
+    "down,down,down,enter,enter,enter,exit"
 }
 
 pub fn install_command(install_dir: &Path, source_bin: &Path) -> Command {
@@ -104,4 +112,39 @@ pub fn seed_fake_network(home: &TempDir, services: &[(&str, &[&str])]) {
 pub fn read_fake_network(home: &TempDir) -> String {
     fs::read_to_string(home.path().join("state/fake-network.json"))
         .expect("read fake network")
+}
+
+pub fn query_dns_response_code(port: u16, domain: &str) -> ResponseCode {
+    let mut message = Message::new();
+    message.set_id(7);
+    message.add_query(Query::query(
+        Name::from_ascii(domain).expect("valid domain"),
+        RecordType::A,
+    ));
+
+    let mut payload = Vec::new();
+    let mut encoder = BinEncoder::new(&mut payload);
+    message.emit(&mut encoder).expect("encode dns query");
+
+    let socket = UdpSocket::bind("127.0.0.1:0").expect("bind local udp socket");
+    socket
+        .set_read_timeout(Some(Duration::from_millis(250)))
+        .expect("set read timeout");
+
+    for _ in 0..10 {
+        socket
+            .send_to(&payload, ("127.0.0.1", port))
+            .expect("send dns query");
+        let mut buffer = [0u8; 4096];
+        match socket.recv_from(&mut buffer) {
+            Ok((size, _)) => {
+                let response =
+                    Message::from_vec(&buffer[..size]).expect("decode dns response");
+                return response.response_code();
+            }
+            Err(_) => thread::sleep(Duration::from_millis(100)),
+        }
+    }
+
+    panic!("sentinel runtime did not answer on port {port}");
 }

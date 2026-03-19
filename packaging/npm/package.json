@@ -1,6 +1,6 @@
 {
   "name": "@daniel_santiago/sentinel-cli",
-  "version": "__VERSION__",
+  "version": "0.1.1",
   "description": "System-level CLI ad blocker with safe recovery workflows",
   "license": "Apache-2.0",
   "homepage": "https://github.com/Daniel-Santiago-Acosta-1013/sentinel-cli",

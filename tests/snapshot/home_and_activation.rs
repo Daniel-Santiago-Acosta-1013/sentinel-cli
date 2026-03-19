@@ -10,6 +10,8 @@ fn home_snapshot_stays_clean_and_focused() {
         .success()
         .stdout(contains(env!("CARGO_PKG_VERSION")))
         .stdout(contains("◆ Inicio"))
+        .stdout(contains("Ajustes"))
+        .stdout(contains("Riesgo: Normal").not())
         .stdout(contains("Elige una accion principal").not())
         .stdout(contains("Campo").not())
         .stdout(contains("Ejecutar chequeos de seguridad").not())

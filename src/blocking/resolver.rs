@@ -9,6 +9,11 @@ use tokio::{net::UdpSocket, time::timeout};
 
 use crate::blocking::blocklist::BlocklistBundle;
 
+pub struct QueryResolution {
+    pub payload: Vec<u8>,
+    pub blocked_domain: Option<String>,
+}
+
 pub fn should_block(domain: &str, blocklist: &BlocklistBundle) -> bool {
     blocklist.matches(domain)
 }
@@ -17,20 +22,29 @@ pub async fn handle_query(
     payload: &[u8],
     upstream: SocketAddr,
     blocklist: &BlocklistBundle,
-) -> Result<Vec<u8>> {
+) -> Result<QueryResolution> {
     let message = Message::from_vec(payload).into_diagnostic()?;
     let query = if let Some(query) = message.queries().first() {
         query
     } else {
-        return Ok(payload.to_vec());
+        return Ok(QueryResolution {
+            payload: payload.to_vec(),
+            blocked_domain: None,
+        });
     };
 
     let domain = query.name().to_utf8().trim_end_matches('.').to_lowercase();
     if should_block(&domain, blocklist) {
-        return blocked_response(&message);
+        return Ok(QueryResolution {
+            payload: blocked_response(&message)?,
+            blocked_domain: Some(domain),
+        });
     }
 
-    forward_query(payload, upstream).await
+    Ok(QueryResolution {
+        payload: forward_query(payload, upstream).await?,
+        blocked_domain: None,
+    })
 }
 
 fn blocked_response(message: &Message) -> Result<Vec<u8>> {

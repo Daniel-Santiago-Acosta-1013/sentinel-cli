@@ -72,9 +72,6 @@ impl BlocklistBundle {
             .filter(|line| !line.is_empty() && !line.starts_with('#'))
             .map(|domain| domain.trim_end_matches('.').to_lowercase())
             .collect::<BTreeSet<_>>();
-        if domains.is_empty() {
-            return Err(miette!("the bundled ad-domain list is empty"));
-        }
 
         let loaded_at = DateTime::<Utc>::from(modified);
         Ok(Self {
@@ -125,7 +122,7 @@ mod tests {
         let bundle = BlocklistBundle::load_from_path(&blocklist_path).expect("load mirror");
 
         assert_eq!(bundle.domain_count, 121);
-        assert_eq!(bundle.version, "0.1.1-121");
+        assert_eq!(bundle.version, format!("{}-121", env!("CARGO_PKG_VERSION")));
         assert_eq!(bundle.source_label, "mirrored-local-blocklist");
         assert!(bundle.matches("pixel.rubiconproject.com"));
         assert!(bundle.matches("subdomain.zemanta.com"));

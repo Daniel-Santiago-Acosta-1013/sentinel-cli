@@ -5,6 +5,7 @@ set -eu
 
 [ -n "${RELEASE_MANIFEST_PATH:-}" ] || release_fail "RELEASE_MANIFEST_PATH is required"
 . "$RELEASE_MANIFEST_PATH"
+release_validate_version_alignment "$RELEASE_VERSION"
 
 existing_status=$(release_read_state_value "github-release" STATUS)
 existing_version=$(release_read_state_value "github-release" VERSION)
@@ -24,6 +25,7 @@ if [ -n "${RELEASE_STATE_DIR:-}" ]; then
   release_write_state "github-release" \
     "STATUS=materialized" \
     "VERSION=$RELEASE_VERSION" \
+    "TAG=$RELEASE_TAG" \
     "COMMIT=$SOURCE_COMMIT" \
     "ARTIFACT_REF=$CANONICAL_ARCHIVE" \
     "DETAILS=canonical GitHub release materialized"

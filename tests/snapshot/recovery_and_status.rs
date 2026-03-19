@@ -9,7 +9,8 @@ fn status_snapshot_surfaces_install_and_runtime_summary() {
         .assert()
         .success()
         .stdout(contains("◆ Estado de Sentinel"))
-        .stdout(contains("Accion sugerida"))
+        .stdout(contains("Actividad de bloqueo"))
+        .stdout(contains("Accion sugerida").not())
         .stdout(contains("Logs"));
 }
 
@@ -49,7 +50,7 @@ fn recovery_snapshot_stays_explicit_and_guided() {
     let port = next_port();
     scripted_command(&home, "enter,enter,enter,exit", port).assert().success();
 
-    scripted_command(&home, "down,down,enter,enter,enter,exit", port)
+    scripted_command(&home, "down,down,down,enter,enter,enter,exit", port)
         .assert()
         .success()
         .stdout(contains("◆ Recuperacion completada"))

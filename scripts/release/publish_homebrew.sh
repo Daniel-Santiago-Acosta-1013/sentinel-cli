@@ -5,13 +5,18 @@ set -eu
 
 [ -n "${RELEASE_MANIFEST_PATH:-}" ] || release_fail "RELEASE_MANIFEST_PATH is required"
 . "$RELEASE_MANIFEST_PATH"
+release_validate_version_alignment "$RELEASE_VERSION"
 
 repo_root=$(release_repo_root)
 template_path="$repo_root/packaging/homebrew/sentinel.rb.tpl"
 rendered_formula="$ARTIFACT_DIR/sentinel.rb"
 archive_url="${RELEASE_ARCHIVE_URL:-https://github.com/${GITHUB_REPOSITORY:-Daniel-Santiago-Acosta-1013/sentinel-cli}/releases/download/$RELEASE_TAG/$(basename "$CANONICAL_ARCHIVE")}"
+template_version=$(release_homebrew_template_version)
 existing_status=$(release_read_state_value "homebrew" STATUS)
 existing_version=$(release_read_state_value "homebrew" VERSION)
+
+[ "$template_version" = "$RELEASE_VERSION" ] || \
+  release_fail "Homebrew formula template version does not match release manifest"
 
 if [ "$existing_status" = "incompatible" ]; then
   release_fail "incompatible Homebrew publication state already exists"
@@ -24,7 +29,6 @@ if [ "$existing_status" = "materialized" ] && [ "$existing_version" = "$RELEASE_
 fi
 
 sed \
-  -e "s|__VERSION__|$RELEASE_VERSION|g" \
   -e "s|__ARCHIVE_URL__|$archive_url|g" \
   -e "s|__SHA256__|$CANONICAL_ARCHIVE_SHA256|g" \
   "$template_path" > "$rendered_formula"

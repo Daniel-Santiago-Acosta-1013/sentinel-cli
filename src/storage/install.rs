@@ -22,17 +22,6 @@ pub enum InstallAction {
     None,
 }
 
-impl InstallAction {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Install => "Instalar",
-            Self::Update => "Actualizar",
-            Self::Reinstall => "Reinstalar",
-            Self::None => "Sin accion",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstallationState {
     pub installed: bool,

@@ -1,23 +1,55 @@
 name: Release
-run-name: Deploy release ${{ github.ref_name }}
+run-name: Deploy release ${{ inputs.version }}
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Nueva version estable a publicar
+        required: true
+        type: string
 
 permissions:
   contents: write
   id-token: write
 
 jobs:
-  release:
+  prepare-version:
     runs-on: ubuntu-latest
+    outputs:
+      release_version: ${{ steps.align.outputs.RELEASE_VERSION }}
+      release_tag: ${{ steps.align.outputs.RELEASE_TAG }}
+      release_commit: ${{ steps.align.outputs.RELEASE_COMMIT }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Fetch current main reference
+        run: git fetch origin main:refs/remotes/origin/main --force
+
+      - name: Align repository version surfaces
+        id: align
+        run: sh scripts/release/update_versions.sh
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
+
+      - name: Push version commit
+        run: git push origin HEAD:main
+
+      - name: Push release tag
+        run: git push origin ${{ steps.align.outputs.RELEASE_TAG }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: prepare-version
+    steps:
+      - name: Checkout repository at release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare-version.outputs.release_tag }}
 
       - name: Fetch current main reference
         run: git fetch origin main:refs/remotes/origin/main --force
@@ -38,31 +70,27 @@ jobs:
         id: authorize
         run: sh scripts/release/authorize_release.sh
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.prepare-version.outputs.release_tag }}
+          RELEASE_TAG_COMMIT: ${{ needs.prepare-version.outputs.release_commit }}
 
       - name: Stop on blocked release
         if: steps.authorize.outputs.AUTHORIZED != 'true'
         run: |
           echo "Release blocked before publication"
           echo "Reason: ${{ steps.authorize.outputs.BLOCK_REASON }}"
+          exit 1
 
       - name: Build canonical artifacts
         if: steps.authorize.outputs.AUTHORIZED == 'true'
         id: build
         run: sh scripts/release/build_release_artifacts.sh
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_TAG_COMMIT: ${{ steps.authorize.outputs.TAG_COMMIT }}
-
-      - name: Revalidate authorization before publication
-        if: steps.authorize.outputs.AUTHORIZED == 'true'
-        id: reauthorize
-        run: sh scripts/release/authorize_release.sh
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.prepare-version.outputs.release_version }}
+          RELEASE_TAG: ${{ needs.prepare-version.outputs.release_tag }}
+          SOURCE_COMMIT: ${{ needs.prepare-version.outputs.release_commit }}
 
       - name: Publish canonical GitHub release
-        if: steps.reauthorize.outputs.AUTHORIZED == 'true'
+        if: steps.authorize.outputs.AUTHORIZED == 'true'
         id: github_release
         run: sh scripts/release/publish_github_release.sh
         env:
@@ -70,14 +98,14 @@ jobs:
           RELEASE_MANIFEST_PATH: ${{ steps.build.outputs.MANIFEST_PATH }}
 
       - name: Publish npm package
-        if: steps.reauthorize.outputs.AUTHORIZED == 'true'
+        if: steps.authorize.outputs.AUTHORIZED == 'true'
         id: npm_publish
         run: sh scripts/release/publish_npm.sh
         env:
           RELEASE_MANIFEST_PATH: ${{ steps.build.outputs.MANIFEST_PATH }}
 
       - name: Publish Homebrew formula
-        if: steps.reauthorize.outputs.AUTHORIZED == 'true'
+        if: steps.authorize.outputs.AUTHORIZED == 'true'
         id: homebrew_publish
         run: sh scripts/release/publish_homebrew.sh
         env:
@@ -87,7 +115,7 @@ jobs:
           HOMEBREW_TAP_PATH: ${{ runner.temp }}/homebrew-tap
 
       - name: Inspect final release state
-        if: always() && steps.reauthorize.outputs.AUTHORIZED == 'true'
+        if: always() && steps.authorize.outputs.AUTHORIZED == 'true'
         id: inspect
         run: sh scripts/release/inspect_release_state.sh
 
@@ -95,9 +123,8 @@ jobs:
         if: always()
         run: sh scripts/release/summarize_release.sh
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_TAG_COMMIT: ${{ steps.authorize.outputs.TAG_COMMIT }}
-          RELEASE_MAIN_HEAD: ${{ steps.authorize.outputs.MAIN_HEAD }}
-          RELEASE_VERSION: ${{ steps.build.outputs.RELEASE_VERSION }}
-          AUTHORIZED: ${{ steps.reauthorize.outputs.AUTHORIZED || steps.authorize.outputs.AUTHORIZED }}
-          BLOCK_REASON: ${{ steps.reauthorize.outputs.BLOCK_REASON || steps.authorize.outputs.BLOCK_REASON }}
+          RELEASE_TAG: ${{ needs.prepare-version.outputs.release_tag }}
+          RELEASE_TAG_COMMIT: ${{ needs.prepare-version.outputs.release_commit }}
+          RELEASE_VERSION: ${{ needs.prepare-version.outputs.release_version }}
+          AUTHORIZED: ${{ steps.authorize.outputs.AUTHORIZED }}
+          BLOCK_REASON: ${{ steps.authorize.outputs.BLOCK_REASON }}

@@ -1,7 +1,7 @@
 class Sentinel < Formula
   desc "System-level CLI ad blocker with safe recovery workflows"
   homepage "https://github.com/Daniel-Santiago-Acosta-1013/sentinel-cli"
-  version "__VERSION__"
+  version "0.1.1"
   url "__ARCHIVE_URL__"
   sha256 "__SHA256__"
 

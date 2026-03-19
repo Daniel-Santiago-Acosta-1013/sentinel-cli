@@ -13,10 +13,11 @@ use tracing_subscriber::EnvFilter;
 use crate::{
     blocking::{blocklist::BlocklistBundle, runtime},
     cli::{
-        InputEvent,
+        InputEvent, copy,
         menu_state::MenuSession,
         navigation::{
-            ConfirmationAction, LogScope, MenuActionId, ResultTone, Route, default_route,
+            ConfirmationAction, DomainEditorMode, LogScope, MenuActionId, ResultTone,
+            Route, default_route,
         },
         parse_script, renderer,
         terminal::TerminalSession,
@@ -24,6 +25,7 @@ use crate::{
     control::{activation::ActivationController, recovery::RecoveryController},
     install::version,
     storage::{
+        blocked_domains::BlockedDomainsStore,
         config::ConfigStore,
         events::EventStore,
         install::InstallStore,
@@ -130,9 +132,58 @@ pub fn read_file_if_exists(path: &Path) -> AppResult<Option<String>> {
     std::fs::read_to_string(path).into_diagnostic().map(Some)
 }
 
+pub fn normalize_domain(input: &str) -> AppResult<String> {
+    let domain = input.trim().trim_matches('.').to_ascii_lowercase();
+    if domain.is_empty() {
+        return Err(miette!("el dominio no puede estar vacio"));
+    }
+    if !domain.is_ascii() {
+        return Err(miette!(
+            "el dominio debe usar solo caracteres ASCII o punycode"
+        ));
+    }
+    if domain.len() > 253 {
+        return Err(miette!("el dominio excede la longitud maxima permitida"));
+    }
+    if domain.contains("://") || domain.contains('/') {
+        return Err(miette!("introduce solo el nombre de dominio, sin protocolo ni rutas"));
+    }
+    if domain.chars().any(char::is_whitespace) {
+        return Err(miette!("el dominio no puede contener espacios"));
+    }
+    if !domain.contains('.') {
+        return Err(miette!("el dominio debe incluir al menos un punto"));
+    }
+
+    for label in domain.split('.') {
+        if label.is_empty() {
+            return Err(miette!(
+                "el dominio no puede contener segmentos vacios entre puntos"
+            ));
+        }
+        if label.len() > 63 {
+            return Err(miette!("cada segmento del dominio debe tener maximo 63 caracteres"));
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            return Err(miette!(
+                "cada segmento del dominio debe empezar y terminar con un caracter valido"
+            ));
+        }
+        if !label
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+        {
+            return Err(miette!(
+                "el dominio solo admite letras, numeros, guiones y puntos"
+            ));
+        }
+    }
+
+    Ok(domain)
+}
+
 pub struct SentinelApp {
     paths: AppPaths,
-    blocklist: BlocklistBundle,
     config_store: ConfigStore,
     state_store: StateStore,
     event_store: EventStore,
@@ -141,16 +192,31 @@ pub struct SentinelApp {
 
 impl SentinelApp {
     pub fn new(paths: AppPaths) -> AppResult<Self> {
-        BlocklistBundle::sync_mirror(&paths.blocklist_file)?;
+        let blocked_domains = BlockedDomainsStore::new(paths.blocklist_file.clone());
+        blocked_domains.ensure_seeded()?;
+
         let blocklist = BlocklistBundle::load_from_path(&paths.blocklist_file)?;
+        let state_store = StateStore::new(paths.clone());
+        let mut state = state_store.load()?;
+        state.refresh_bundle(&blocklist);
+        state_store.save(&state)?;
+
         Ok(Self {
             config_store: ConfigStore::new(paths.clone()),
-            state_store: StateStore::new(paths.clone()),
+            state_store,
             event_store: EventStore::new(paths.clone()),
             install_store: InstallStore::new(paths.clone()),
             paths,
-            blocklist,
         })
+    }
+
+    fn blocked_domains_store(&self) -> BlockedDomainsStore {
+        BlockedDomainsStore::new(self.paths.blocklist_file.clone())
+    }
+
+    fn load_blocklist(&self) -> AppResult<BlocklistBundle> {
+        self.blocked_domains_store().ensure_seeded()?;
+        BlocklistBundle::load_from_path(&self.paths.blocklist_file)
     }
 
     async fn run(self) -> AppResult<()> {
@@ -171,7 +237,7 @@ impl SentinelApp {
         let mut session = self.load_session(true)?;
         let mut transcript = vec![renderer::render_snapshot(&session)];
         for event in parse_script(&script)? {
-            if let Some(progress) = self.progress_label_for_input(&session, event) {
+            if let Some(progress) = self.progress_label_for_input(&session, &event) {
                 transcript
                     .push(renderer::render_progress_preview(&session, 100, &progress));
             }
@@ -200,7 +266,7 @@ impl SentinelApp {
             draw_frame(&mut terminal, &frame, session.route, &mut last_drawn_route)?;
             let input = terminal.read_input()?;
 
-            if let Some(progress) = self.progress_label_for_input(&session, input) {
+            if let Some(progress) = self.progress_label_for_input(&session, &input) {
                 let progress_frame = renderer::render_progress_preview(
                     &session,
                     terminal.width(),
@@ -229,11 +295,16 @@ impl SentinelApp {
         let state = self.state_store.load()?;
         let install = self.install_store.inspect_current()?;
         let recent_events = self.event_store.read_recent(20)?;
+        let blocked_domains = self.blocked_domains_store().list()?;
+        let block_activity = self.event_store.block_activity_since_activation()?;
+        let blocklist = self.load_blocklist()?;
         Ok(MenuSession::from_runtime_state(
             state,
             install,
             recent_events,
-            &self.blocklist,
+            blocked_domains,
+            block_activity,
+            &blocklist,
             transcript_mode,
         ))
     }
@@ -248,7 +319,26 @@ impl SentinelApp {
             InputEvent::Down => session.select_next(),
             InputEvent::Back => self.handle_back(session),
             InputEvent::Exit => return self.exit_session(session),
+            InputEvent::Backspace => {
+                if matches!(session.route, Route::BlockedDomainEditor(_)) {
+                    session.pop_domain_input();
+                }
+            }
+            InputEvent::InsertChar(ch) => {
+                if matches!(session.route, Route::BlockedDomainEditor(_)) {
+                    session.append_domain_input(&ch.to_string());
+                }
+            }
+            InputEvent::InsertText(text) => {
+                if matches!(session.route, Route::BlockedDomainEditor(_)) {
+                    session.replace_domain_input(text);
+                }
+            }
             InputEvent::Confirm => {
+                if let Route::BlockedDomainEditor(mode) = session.route {
+                    return self.persist_domain_editor(session, mode).await;
+                }
+
                 if let Some(action) = session.selected_action_id() {
                     return self.execute_action(session, action).await;
                 }
@@ -261,6 +351,25 @@ impl SentinelApp {
     fn handle_back(&self, session: &mut MenuSession) {
         match session.route {
             Route::Home => {}
+            Route::Settings => {
+                session.route = Route::Home;
+                session.selected_index = 0;
+                session.last_message =
+                    "Volviste al inicio para revisar otra accion principal.".to_owned();
+            }
+            Route::BlockedDomains => {
+                session.route = Route::Settings;
+                session.selected_index = 0;
+                session.last_message =
+                    "Volviste a Ajustes sin perder el catalogo vigente.".to_owned();
+            }
+            Route::BlockedDomainEditor(_) => {
+                session.route = Route::BlockedDomains;
+                session.selected_index = 0;
+                session.clear_domain_editor();
+                session.last_message =
+                    "La edicion fue cancelada antes de guardar cambios.".to_owned();
+            }
             Route::Recovery => {
                 session.route = Route::Home;
                 session.selected_index = 0;
@@ -318,6 +427,75 @@ impl SentinelApp {
                 self.refresh_status(session)?;
                 Ok(false)
             }
+            MenuActionId::OpenSettings => {
+                self.refresh_blocking_views(session)?;
+                session.route = Route::Settings;
+                session.selected_index = 0;
+                session.last_message =
+                    "Ajustes centraliza la administracion del catalogo activo.".to_owned();
+                Ok(false)
+            }
+            MenuActionId::ViewBlockedDomains => {
+                self.refresh_blocking_views(session)?;
+                session.route = Route::BlockedDomains;
+                session.selected_index = 0;
+                session.last_message = copy::blocked_domain_selection(
+                    session.selected_blocked_domain(),
+                );
+                Ok(false)
+            }
+            MenuActionId::AddBlockedDomain => {
+                session.start_domain_editor(DomainEditorMode::Add, None);
+                session.last_message =
+                    "Introduce un dominio valido y confirma para guardarlo.".to_owned();
+                Ok(false)
+            }
+            MenuActionId::EditBlockedDomain => {
+                let Some(domain) = session.selected_blocked_domain().map(str::to_owned)
+                else {
+                    session.last_message =
+                        "No hay un dominio seleccionado para editar.".to_owned();
+                    return Ok(false);
+                };
+                session.start_domain_editor(DomainEditorMode::Edit, Some(domain.clone()));
+                session.last_message =
+                    format!("Editando `{domain}`. Confirma cuando termines.");
+                Ok(false)
+            }
+            MenuActionId::DeleteBlockedDomain => {
+                let Some(domain) = session.selected_blocked_domain().map(str::to_owned)
+                else {
+                    session.last_message =
+                        "No hay un dominio seleccionado para eliminar.".to_owned();
+                    return Ok(false);
+                };
+
+                match self.blocked_domains_store().remove(&domain) {
+                    Ok(updated) => {
+                        session.sync_blocked_domains(updated);
+                        self.persist_runtime_bundle(session)?;
+                        session.route = Route::BlockedDomains;
+                        session.selected_index = 0;
+                        session.last_message = copy::blocked_domain_deleted(&domain);
+                    }
+                    Err(err) => session.last_message = err.to_string(),
+                }
+                Ok(false)
+            }
+            MenuActionId::SelectNextBlockedDomain => {
+                session.select_next_domain();
+                session.last_message = copy::blocked_domain_selection(
+                    session.selected_blocked_domain(),
+                );
+                Ok(false)
+            }
+            MenuActionId::SelectPreviousBlockedDomain => {
+                session.select_previous_domain();
+                session.last_message = copy::blocked_domain_selection(
+                    session.selected_blocked_domain(),
+                );
+                Ok(false)
+            }
             MenuActionId::ViewLogs => {
                 if let Some(scope) = session.log_scope() {
                     session.route = Route::Logs(scope);
@@ -335,14 +513,6 @@ impl SentinelApp {
                         .to_owned();
                 Ok(false)
             }
-            MenuActionId::BackHome => {
-                session.route = Route::Home;
-                session.selected_index = 0;
-                session.last_result = None;
-                session.last_message =
-                    "Volviste al inicio para revisar otra vista o accion.".to_owned();
-                Ok(false)
-            }
             MenuActionId::BackToPrevious => {
                 if let Some(scope) = session.log_scope() {
                     session.route = log_parent_route(scope);
@@ -350,6 +520,21 @@ impl SentinelApp {
                     session.last_message =
                         "Volviste a la vista anterior sin perder el contexto.".to_owned();
                 }
+                Ok(false)
+            }
+            MenuActionId::BackSettings => {
+                session.route = Route::Settings;
+                session.selected_index = 0;
+                session.last_message =
+                    "Volviste a Ajustes sin perder el catalogo actual.".to_owned();
+                Ok(false)
+            }
+            MenuActionId::BackHome => {
+                session.route = Route::Home;
+                session.selected_index = 0;
+                session.last_result = None;
+                session.last_message =
+                    "Volviste al inicio para revisar otra vista o accion.".to_owned();
                 Ok(false)
             }
             MenuActionId::Exit => self.exit_session(session),
@@ -385,9 +570,9 @@ impl SentinelApp {
     fn progress_label_for_input(
         &self,
         session: &MenuSession,
-        input: InputEvent,
+        input: &InputEvent,
     ) -> Option<String> {
-        if input != InputEvent::Confirm {
+        if *input != InputEvent::Confirm {
             return None;
         }
 
@@ -407,16 +592,18 @@ impl SentinelApp {
     }
 
     async fn enable_protection(&self, session: &mut MenuSession) -> AppResult<()> {
+        let blocklist = self.load_blocklist()?;
         let controller = ActivationController::new(
             &self.paths,
             &self.config_store,
             &self.state_store,
             &self.event_store,
-            &self.blocklist,
+            &blocklist,
         );
         let next_state = controller.enable().await?;
         session.sync_runtime_state(next_state);
         self.refresh_recent_events(session)?;
+        session.sync_block_activity(self.event_store.block_activity_since_activation()?);
 
         if session.runtime_state.mode == ProtectionMode::Active {
             session.show_result(
@@ -441,16 +628,18 @@ impl SentinelApp {
     }
 
     async fn disable_protection(&self, session: &mut MenuSession) -> AppResult<()> {
+        let blocklist = self.load_blocklist()?;
         let controller = ActivationController::new(
             &self.paths,
             &self.config_store,
             &self.state_store,
             &self.event_store,
-            &self.blocklist,
+            &blocklist,
         );
         let next_state = controller.disable().await?;
         session.sync_runtime_state(next_state);
         self.refresh_recent_events(session)?;
+        session.sync_block_activity(self.event_store.block_activity_since_activation()?);
 
         let tone = if matches!(
             session.runtime_state.mode,
@@ -488,6 +677,7 @@ impl SentinelApp {
         let next_state = controller.recover().await?;
         session.sync_runtime_state(next_state);
         self.refresh_recent_events(session)?;
+        session.sync_block_activity(self.event_store.block_activity_since_activation()?);
 
         let (title, tone) = match session.runtime_state.last_verification_result.as_ref()
         {
@@ -529,13 +719,16 @@ impl SentinelApp {
                         .to_owned(),
                 );
         }
-        state.refresh_bundle(&self.blocklist);
+
+        let blocklist = self.load_blocklist()?;
+        state.refresh_bundle(&blocklist);
         self.state_store.save(&state)?;
 
         let install = self.install_store.inspect_current()?;
         session.sync_runtime_state(state);
         session.install_state = install;
         self.refresh_recent_events(session)?;
+        self.refresh_blocking_views(session)?;
         session.route = Route::Status;
         session.selected_index = 0;
         session.last_result = None;
@@ -548,6 +741,65 @@ impl SentinelApp {
     fn refresh_recent_events(&self, session: &mut MenuSession) -> AppResult<()> {
         session.sync_recent_events(self.event_store.read_recent(20)?);
         Ok(())
+    }
+
+    fn refresh_blocking_views(&self, session: &mut MenuSession) -> AppResult<()> {
+        session.sync_blocked_domains(self.blocked_domains_store().list()?);
+        session.sync_block_activity(self.event_store.block_activity_since_activation()?);
+        self.persist_runtime_bundle(session)?;
+        Ok(())
+    }
+
+    fn persist_runtime_bundle(&self, session: &mut MenuSession) -> AppResult<()> {
+        let blocklist = self.load_blocklist()?;
+        session.runtime_state.refresh_bundle(&blocklist);
+        self.state_store.save(&session.runtime_state)?;
+        Ok(())
+    }
+
+    async fn persist_domain_editor(
+        &self,
+        session: &mut MenuSession,
+        mode: DomainEditorMode,
+    ) -> AppResult<bool> {
+        let result = match mode {
+            DomainEditorMode::Add => self
+                .blocked_domains_store()
+                .add(&session.domain_input)
+                .map(|domains| (domains, false, session.domain_input.clone())),
+            DomainEditorMode::Edit => {
+                let Some(original) = session.domain_original.as_deref() else {
+                    session.last_message =
+                        "No hay un dominio base para aplicar la edicion.".to_owned();
+                    return Ok(false);
+                };
+                self.blocked_domains_store()
+                    .update(original, &session.domain_input)
+                    .map(|domains| (domains, true, session.domain_input.clone()))
+            }
+        };
+
+        match result {
+            Ok((domains, edited, domain)) => {
+                let normalized = normalize_domain(&domain)?;
+                session.sync_blocked_domains(domains);
+                if let Some(index) = session
+                    .blocked_domains
+                    .iter()
+                    .position(|item| item == &normalized)
+                {
+                    session.selected_domain_index = index;
+                }
+                self.persist_runtime_bundle(session)?;
+                session.route = Route::BlockedDomains;
+                session.selected_index = 0;
+                session.clear_domain_editor();
+                session.last_message = copy::blocked_domain_saved(&normalized, edited);
+            }
+            Err(err) => session.last_message = err.to_string(),
+        }
+
+        Ok(false)
     }
 }
 

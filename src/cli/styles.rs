@@ -1,4 +1,4 @@
-use crate::storage::state::{ProtectionMode, RiskLevel};
+use crate::storage::state::ProtectionMode;
 
 use super::navigation::ResultTone;
 
@@ -36,6 +36,10 @@ pub fn section_title(label: &str, profile: StyleProfile) -> String {
 
 pub fn emphasis(label: &str, profile: StyleProfile) -> String {
     colorize(label, "1;36", profile)
+}
+
+pub fn accent_blue(label: &str, profile: StyleProfile) -> String {
+    colorize(label, "1;34", profile)
 }
 
 pub fn muted(label: &str, profile: StyleProfile) -> String {
@@ -117,14 +121,6 @@ pub fn tone_for_mode(mode: ProtectionMode) -> Tone {
         ProtectionMode::Active => Tone::Success,
         ProtectionMode::Degraded => Tone::Error,
         ProtectionMode::Recovering => Tone::Warning,
-    }
-}
-
-pub fn tone_for_risk(risk: RiskLevel) -> Tone {
-    match risk {
-        RiskLevel::Normal => Tone::Success,
-        RiskLevel::Warning => Tone::Warning,
-        RiskLevel::Critical => Tone::Error,
     }
 }
 

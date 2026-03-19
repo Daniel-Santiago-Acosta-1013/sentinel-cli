@@ -1,8 +1,10 @@
 use crate::storage::{
-    events::EventRecord, install::InstallationState, state::RuntimeState,
+    events::{BlockActivitySummary, EventRecord},
+    install::InstallationState,
+    state::RuntimeState,
 };
 
-use super::styles::StyleProfile;
+use super::{copy, styles, styles::StyleProfile};
 
 pub fn render_summary_table(
     runtime: &RuntimeState,
@@ -27,13 +29,13 @@ pub fn render_summary_table(
 pub fn render_status_table(
     runtime: &RuntimeState,
     install: &InstallationState,
+    activity: &BlockActivitySummary,
     terminal_width: usize,
     compact: bool,
     profile: StyleProfile,
 ) -> String {
     let mut rows = vec![
         ("Proteccion", runtime.mode.label().to_owned()),
-        ("Riesgo", runtime.risk_level.label().to_owned()),
         (
             "Runtime local",
             runtime
@@ -46,7 +48,6 @@ pub fn render_status_table(
             "Ruta instalada",
             install.path_entry.as_deref().unwrap_or("No disponible").to_owned(),
         ),
-        ("Resumen", runtime.status_summary.clone()),
     ];
     if let Some(verification) = runtime.last_verification_result.as_ref() {
         rows.push(("Verificacion", verification.summary.clone()));
@@ -54,11 +55,20 @@ pub fn render_status_table(
     if !compact {
         rows.push((
             "Version instalada",
-            install.installed_version.as_deref().unwrap_or("No detectada").to_owned(),
+            install
+                .installed_version
+                .as_deref()
+                .unwrap_or("No detectada")
+                .to_owned(),
         ));
-        rows.push(("Accion sugerida", install.action.label().to_owned()));
     }
-    render_table("Estado", "Valor", &rows, terminal_width, profile)
+
+    [
+        render_table("Estado", "Valor", &rows, terminal_width, profile),
+        String::new(),
+        render_block_activity_table(activity, terminal_width, profile),
+    ]
+    .join("\n")
 }
 
 pub fn render_safety_table(
@@ -124,6 +134,114 @@ pub fn render_recovery_table(
     render_table("Recuperacion", "Valor", &rows, terminal_width, profile)
 }
 
+pub fn render_settings_summary(
+    blocked_domain_count: usize,
+    terminal_width: usize,
+    profile: StyleProfile,
+) -> String {
+    let rows = vec![
+        ("Seccion", "Administracion del bloqueo".to_owned()),
+        ("Dominios vigentes", blocked_domain_count.to_string()),
+        (
+            "Siguiente paso",
+            "Entra a Dominios bloqueados para revisar o modificar la lista actual."
+                .to_owned(),
+        ),
+    ];
+    render_table("Campo", "Valor", &rows, terminal_width, profile)
+}
+
+pub fn render_blocked_domains_table(
+    domains: &[String],
+    selected_index: usize,
+    terminal_width: usize,
+    profile: StyleProfile,
+) -> String {
+    if domains.is_empty() {
+        let rows = vec![
+            ("Estado", copy::blocked_domains_empty_state().to_owned()),
+            ("Seleccion", copy::blocked_domain_selection(None)),
+        ];
+        return render_table("Campo", "Valor", &rows, terminal_width, profile);
+    }
+
+    let window_size = 8usize;
+    let selected_index = selected_index.min(domains.len().saturating_sub(1));
+    let start = selected_index.saturating_sub(window_size.saturating_sub(1));
+    let end = (start + window_size).min(domains.len());
+    let mut rows = domains
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .map(|(index, domain)| {
+            (
+                if index == selected_index { "›" } else { " " },
+                domain.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    rows.push((
+        "Seleccion",
+        copy::blocked_domain_selection(domains.get(selected_index).map(String::as_str)),
+    ));
+    let selected_domain = domains.get(selected_index).cloned();
+    colorize_selected_domain(
+        render_table("Sel", "Dominio", &rows, terminal_width, profile),
+        selected_domain.as_deref(),
+        profile,
+    )
+}
+
+pub fn render_domain_editor(
+    current_value: &str,
+    hint: String,
+    terminal_width: usize,
+    profile: StyleProfile,
+) -> String {
+    let rows = vec![
+        (
+            "Valor actual",
+            if current_value.is_empty() {
+                "-".to_owned()
+            } else {
+                current_value.to_owned()
+            },
+        ),
+        ("Ayuda", hint),
+    ];
+    render_table("Campo", "Valor", &rows, terminal_width, profile)
+}
+
+pub fn render_block_activity_table(
+    activity: &BlockActivitySummary,
+    terminal_width: usize,
+    profile: StyleProfile,
+) -> String {
+    let rows = vec![
+        (
+            "Bloqueos desde la activacion",
+            activity.blocked_since_activation.to_string(),
+        ),
+        (
+            "Dominios unicos bloqueados",
+            activity.unique_blocked_domains.to_string(),
+        ),
+        (
+            "Ultimo bloqueo",
+            activity
+                .last_blocked_at
+                .map(|value| value.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                .unwrap_or_else(|| copy::block_activity_empty_value().to_owned()),
+        ),
+        (
+            "Top dominios bloqueados",
+            copy::top_blocked_domains_label(activity),
+        ),
+    ];
+    render_table("Actividad de bloqueo", "Valor", &rows, terminal_width, profile)
+}
+
 pub fn render_log_panel_stream(
     events: &[EventRecord],
     empty_copy: &str,
@@ -161,7 +279,7 @@ fn render_table(
         .chain(std::iter::once(left_header.chars().count()))
         .max()
         .unwrap_or(12);
-    let left_width = max_label_width.clamp(12, inner_width.saturating_sub(16).min(22));
+    let left_width = max_label_width.clamp(12, inner_width.saturating_sub(16).min(26));
     let right_width = inner_width.saturating_sub(left_width + 3);
 
     let (
@@ -250,6 +368,22 @@ fn truncate(value: &str, width: usize) -> String {
 
 fn join_or_dash(items: &[String]) -> String {
     if items.is_empty() { "-".to_owned() } else { items.join(", ") }
+}
+
+fn colorize_selected_domain(
+    table: String,
+    selected_domain: Option<&str>,
+    profile: StyleProfile,
+) -> String {
+    if !profile.color {
+        return table;
+    }
+
+    let Some(domain) = selected_domain else {
+        return table;
+    };
+
+    table.replace(domain, &styles::accent_blue(domain, profile))
 }
 
 fn render_event_entry(event: &EventRecord, width: usize) -> Vec<String> {

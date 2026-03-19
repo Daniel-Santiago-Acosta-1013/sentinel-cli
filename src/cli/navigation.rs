@@ -14,8 +14,17 @@ pub enum LogScope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DomainEditorMode {
+    Add,
+    Edit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Route {
     Home,
+    Settings,
+    BlockedDomains,
+    BlockedDomainEditor(DomainEditorMode),
     Safety,
     Status,
     Logs(LogScope),
@@ -30,9 +39,17 @@ pub enum Route {
 pub enum MenuActionId {
     ToggleProtection,
     ViewStatus,
+    OpenSettings,
+    ViewBlockedDomains,
+    AddBlockedDomain,
+    EditBlockedDomain,
+    DeleteBlockedDomain,
+    SelectNextBlockedDomain,
+    SelectPreviousBlockedDomain,
     ViewLogs,
     RecoverNetwork,
     BackToPrevious,
+    BackSettings,
     BackHome,
     Exit,
     Confirm,

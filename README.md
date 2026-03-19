@@ -15,6 +15,8 @@ trazabilidad, rollback claro y una experiencia guiada fácil de entender.
 - Captura snapshots antes de tocar la red para poder restaurarla.
 - Muestra un flujo interactivo con vistas separadas para:
   - activar o desactivar Sentinel
+  - administrar `Ajustes`
+  - listar y mantener `Dominios bloqueados`
   - revisar estado
   - ver logs
   - recuperar la red
@@ -89,6 +91,7 @@ SENTINEL_FAKE_PLATFORM=1 cargo run
 - `Enter`: confirmar
 - `Esc`: volver
 - `q`: salir
+- al editar dominios: escribir para reemplazar el valor, `Backspace` para borrar
 
 ## Configuración y datos
 
@@ -187,6 +190,12 @@ El repositorio incluye automatización de release para mantenimiento en:
 
 Ese flujo valida consistencia de versión, artefactos y canales de distribución
 antes de publicar.
+
+La creación de versiones ya no se inicia empujando tags locales. El flujo
+oficial se ejecuta desde GitHub Actions con `workflow_dispatch`, recibe la
+nueva versión como input, alinea `Cargo.toml` y las superficies de packaging,
+genera un commit auditable, crea el tag y solo después ejecuta el release y
+deploy desde ese mismo estado.
 
 ## Licencia
 

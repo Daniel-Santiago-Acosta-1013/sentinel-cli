@@ -48,7 +48,10 @@ fn install_script_reinstalls_same_version_when_artifact_differs() {
     let binary = installed_binary(install_root.path());
     write_executable(
         &binary,
-        "#!/bin/sh\nif [ \"${SENTINEL_INTERNAL_MODE:-}\" = \"print-version\" ]; then\n  echo 0.1.1\n  exit 0\nfi\necho old-build\nexit 0\n",
+        &format!(
+            "#!/bin/sh\nif [ \"${{SENTINEL_INTERNAL_MODE:-}}\" = \"print-version\" ]; then\n  echo {}\n  exit 0\nfi\necho old-build\nexit 0\n",
+            env!("CARGO_PKG_VERSION")
+        ),
     );
 
     install_command(install_root.path(), &cargo_binary())

@@ -1,7 +1,7 @@
 use crate::{
     blocking::blocklist::BlocklistBundle,
     storage::{
-        events::EventRecord,
+        events::{BlockActivitySummary, EventRecord},
         install::InstallationState,
         state::{ProtectionMode, RiskLevel, RuntimeState},
     },
@@ -10,8 +10,8 @@ use crate::{
 use super::{
     copy,
     navigation::{
-        ConfirmationAction, LogScope, MenuAction, MenuActionId, ResultTone, Route,
-        default_route,
+        ConfirmationAction, DomainEditorMode, LogScope, MenuAction, MenuActionId,
+        ResultTone, Route, default_route,
     },
 };
 
@@ -33,6 +33,11 @@ pub struct MenuSession {
     pub runtime_state: RuntimeState,
     pub install_state: InstallationState,
     pub recent_events: Vec<EventRecord>,
+    pub blocked_domains: Vec<String>,
+    pub selected_domain_index: usize,
+    pub domain_input: String,
+    pub domain_original: Option<String>,
+    pub block_activity: BlockActivitySummary,
     pub transcript_mode: bool,
     pub last_result: Option<OperationResult>,
     pub progress_label: Option<String>,
@@ -44,6 +49,8 @@ impl MenuSession {
         mut runtime_state: RuntimeState,
         install_state: InstallationState,
         recent_events: Vec<EventRecord>,
+        blocked_domains: Vec<String>,
+        block_activity: BlockActivitySummary,
         blocklist: &BlocklistBundle,
         transcript_mode: bool,
     ) -> Self {
@@ -63,6 +70,11 @@ impl MenuSession {
             runtime_state,
             install_state,
             recent_events,
+            blocked_domains,
+            selected_domain_index: 0,
+            domain_input: String::new(),
+            domain_original: None,
+            block_activity,
             transcript_mode,
             last_result: None,
             progress_label: None,
@@ -93,6 +105,14 @@ impl MenuSession {
                     ),
                 ),
                 action(
+                    MenuActionId::OpenSettings,
+                    copy::action_label(MenuActionId::OpenSettings, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::OpenSettings,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
                     MenuActionId::RecoverNetwork,
                     copy::action_label(
                         MenuActionId::RecoverNetwork,
@@ -100,6 +120,93 @@ impl MenuSession {
                     ),
                     copy::action_description(
                         MenuActionId::RecoverNetwork,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::Exit,
+                    copy::action_label(MenuActionId::Exit, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Exit, self.runtime_state.mode),
+                ),
+            ],
+            Route::Settings => vec![
+                action(
+                    MenuActionId::ViewBlockedDomains,
+                    copy::action_label(MenuActionId::ViewBlockedDomains, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::ViewBlockedDomains,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::BackHome,
+                    copy::action_label(MenuActionId::BackHome, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::BackHome,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::Exit,
+                    copy::action_label(MenuActionId::Exit, self.runtime_state.mode),
+                    copy::action_description(MenuActionId::Exit, self.runtime_state.mode),
+                ),
+            ],
+            Route::BlockedDomains => vec![
+                action(
+                    MenuActionId::AddBlockedDomain,
+                    copy::action_label(MenuActionId::AddBlockedDomain, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::AddBlockedDomain,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::EditBlockedDomain,
+                    copy::action_label(MenuActionId::EditBlockedDomain, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::EditBlockedDomain,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::DeleteBlockedDomain,
+                    copy::action_label(
+                        MenuActionId::DeleteBlockedDomain,
+                        self.runtime_state.mode,
+                    ),
+                    copy::action_description(
+                        MenuActionId::DeleteBlockedDomain,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::SelectNextBlockedDomain,
+                    copy::action_label(
+                        MenuActionId::SelectNextBlockedDomain,
+                        self.runtime_state.mode,
+                    ),
+                    copy::action_description(
+                        MenuActionId::SelectNextBlockedDomain,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::SelectPreviousBlockedDomain,
+                    copy::action_label(
+                        MenuActionId::SelectPreviousBlockedDomain,
+                        self.runtime_state.mode,
+                    ),
+                    copy::action_description(
+                        MenuActionId::SelectPreviousBlockedDomain,
+                        self.runtime_state.mode,
+                    ),
+                ),
+                action(
+                    MenuActionId::BackSettings,
+                    copy::action_label(MenuActionId::BackSettings, self.runtime_state.mode),
+                    copy::action_description(
+                        MenuActionId::BackSettings,
                         self.runtime_state.mode,
                     ),
                 ),
@@ -225,9 +332,8 @@ impl MenuSession {
                     ),
                 ),
             ],
-            Route::Progress => Vec::new(),
-            Route::Exit => Vec::new(),
-            _ => vec![
+            Route::BlockedDomainEditor(_) | Route::Progress | Route::Exit => Vec::new(),
+            Route::Result => vec![
                 action(
                     MenuActionId::BackHome,
                     copy::action_label(MenuActionId::BackHome, self.runtime_state.mode),
@@ -262,6 +368,57 @@ impl MenuSession {
             self.selected_index =
                 if self.selected_index == 0 { len - 1 } else { self.selected_index - 1 };
         }
+    }
+
+    pub fn selected_blocked_domain(&self) -> Option<&str> {
+        self.blocked_domains
+            .get(self.selected_domain_index)
+            .map(String::as_str)
+    }
+
+    pub fn select_next_domain(&mut self) {
+        if !self.blocked_domains.is_empty() {
+            self.selected_domain_index =
+                (self.selected_domain_index + 1) % self.blocked_domains.len();
+        }
+    }
+
+    pub fn select_previous_domain(&mut self) {
+        if !self.blocked_domains.is_empty() {
+            self.selected_domain_index = if self.selected_domain_index == 0 {
+                self.blocked_domains.len() - 1
+            } else {
+                self.selected_domain_index - 1
+            };
+        }
+    }
+
+    pub fn start_domain_editor(
+        &mut self,
+        mode: DomainEditorMode,
+        initial_value: Option<String>,
+    ) {
+        self.route = Route::BlockedDomainEditor(mode);
+        self.selected_index = 0;
+        self.domain_original = initial_value.clone();
+        self.domain_input = initial_value.unwrap_or_default();
+    }
+
+    pub fn append_domain_input(&mut self, value: &str) {
+        self.domain_input.push_str(value);
+    }
+
+    pub fn replace_domain_input(&mut self, value: String) {
+        self.domain_input = value;
+    }
+
+    pub fn pop_domain_input(&mut self) {
+        self.domain_input.pop();
+    }
+
+    pub fn clear_domain_editor(&mut self) {
+        self.domain_input.clear();
+        self.domain_original = None;
     }
 
     pub fn pending_confirmation(&self) -> ConfirmationAction {
@@ -315,6 +472,19 @@ impl MenuSession {
 
     pub fn sync_recent_events(&mut self, recent_events: Vec<EventRecord>) {
         self.recent_events = recent_events;
+    }
+
+    pub fn sync_blocked_domains(&mut self, blocked_domains: Vec<String>) {
+        self.blocked_domains = blocked_domains;
+        if self.blocked_domains.is_empty() {
+            self.selected_domain_index = 0;
+        } else if self.selected_domain_index >= self.blocked_domains.len() {
+            self.selected_domain_index = self.blocked_domains.len() - 1;
+        }
+    }
+
+    pub fn sync_block_activity(&mut self, block_activity: BlockActivitySummary) {
+        self.block_activity = block_activity;
     }
 
     pub fn log_scope(&self) -> Option<LogScope> {

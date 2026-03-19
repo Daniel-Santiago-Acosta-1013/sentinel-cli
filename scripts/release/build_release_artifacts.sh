@@ -3,10 +3,9 @@ set -eu
 
 . "$(dirname -- "$0")/common.sh"
 
+version=$(release_requested_version)
 tag_name=$(release_tag_name)
-version=$(release_strip_v "$tag_name")
 project_version=$(release_project_version)
-tag_commit=$(release_resolve_tag_commit "$tag_name")
 artifact_dir=$(release_artifact_dir)
 bundle_dir="$artifact_dir/bundle"
 binary_path="${RELEASE_BINARY_PATH:-}"
@@ -14,8 +13,16 @@ archive_path="$artifact_dir/sentinel-$version.tar.gz"
 checksum_file="$artifact_dir/SHASUMS256.txt"
 manifest_path=$(release_manifest_path "$artifact_dir")
 
-[ "$version" = "$project_version" ] || release_fail "tag version does not match Cargo.toml version"
-[ -n "$tag_commit" ] || release_fail "unable to resolve release tag commit"
+release_validate_stable_version "$version" || \
+  release_fail "release version must be a stable semantic version"
+[ "$tag_name" = "$(release_expected_tag "$version")" ] || \
+  release_fail "release tag does not match the requested version"
+release_validate_version_alignment "$version"
+[ "$version" = "$project_version" ] || \
+  release_fail "project version is not aligned with the requested release version"
+
+source_commit="${SOURCE_COMMIT:-${RELEASE_SOURCE_COMMIT:-$(release_current_commit)}}"
+[ -n "$source_commit" ] || release_fail "unable to resolve source commit for release build"
 
 mkdir -p "$artifact_dir" "$bundle_dir"
 
@@ -50,7 +57,7 @@ cat > "$manifest_path" <<EOF
 RELEASE_TAG=$tag_name
 RELEASE_VERSION=$version
 PROJECT_VERSION=$project_version
-SOURCE_COMMIT=$tag_commit
+SOURCE_COMMIT=$source_commit
 ARTIFACT_DIR=$artifact_dir
 CANONICAL_ARCHIVE=$archive_path
 CANONICAL_ARCHIVE_SHA256=$archive_sha256
@@ -62,4 +69,4 @@ release_output "MANIFEST_PATH" "$manifest_path"
 release_output "CANONICAL_ARCHIVE" "$archive_path"
 release_output "CANONICAL_ARCHIVE_SHA256" "$archive_sha256"
 release_output "RELEASE_VERSION" "$version"
-release_output "SOURCE_COMMIT" "$tag_commit"
+release_output "SOURCE_COMMIT" "$source_commit"

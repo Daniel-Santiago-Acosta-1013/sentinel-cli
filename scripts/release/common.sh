@@ -6,6 +6,10 @@ release_script_dir() {
 }
 
 release_repo_root() {
+  if [ -n "${RELEASE_REPO_ROOT:-}" ]; then
+    printf '%s' "$RELEASE_REPO_ROOT"
+    return
+  fi
   script_dir=$(release_script_dir)
   CDPATH= cd -- "$script_dir/../.." && pwd
 }
@@ -27,9 +31,54 @@ release_fail() {
   exit 1
 }
 
+release_requested_version() {
+  if [ -n "${RELEASE_VERSION_INPUT:-}" ]; then
+    printf '%s' "$RELEASE_VERSION_INPUT"
+    return
+  fi
+  if [ -n "${INPUT_VERSION:-}" ]; then
+    printf '%s' "$INPUT_VERSION"
+    return
+  fi
+  if [ -n "${RELEASE_VERSION:-}" ]; then
+    printf '%s' "$RELEASE_VERSION"
+    return
+  fi
+  release_fail "RELEASE_VERSION_INPUT, INPUT_VERSION or RELEASE_VERSION is required"
+}
+
+release_validate_stable_version() {
+  printf '%s' "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+}
+
+release_expected_tag() {
+  printf 'v%s' "$1"
+}
+
 release_project_version() {
   repo_root=$(release_repo_root)
   awk -F'"' '/^version = / { print $2; exit }' "$repo_root/Cargo.toml"
+}
+
+release_package_json_version() {
+  repo_root=$(release_repo_root)
+  awk -F'"' '/"version"[[:space:]]*:/ { print $4; exit }' "$repo_root/packaging/npm/package.json"
+}
+
+release_homebrew_template_version() {
+  repo_root=$(release_repo_root)
+  awk -F'"' '/^[[:space:]]*version / { print $2; exit }' "$repo_root/packaging/homebrew/sentinel.rb.tpl"
+}
+
+release_validate_version_alignment() {
+  expected_version=$1
+  cargo_version=$(release_project_version)
+  npm_version=$(release_package_json_version)
+  homebrew_version=$(release_homebrew_template_version)
+
+  [ "$cargo_version" = "$expected_version" ] || release_fail "Cargo.toml version is not aligned with $expected_version"
+  [ "$npm_version" = "$expected_version" ] || release_fail "packaging/npm/package.json version is not aligned with $expected_version"
+  [ "$homebrew_version" = "$expected_version" ] || release_fail "packaging/homebrew/sentinel.rb.tpl version is not aligned with $expected_version"
 }
 
 release_tag_name() {
@@ -41,7 +90,11 @@ release_tag_name() {
     printf '%s' "$GITHUB_REF_NAME"
     return
   fi
-  release_fail "RELEASE_TAG or GITHUB_REF_NAME is required"
+  if [ -n "${RELEASE_VERSION:-}" ]; then
+    release_expected_tag "$RELEASE_VERSION"
+    return
+  fi
+  release_fail "RELEASE_TAG, GITHUB_REF_NAME or RELEASE_VERSION is required"
 }
 
 release_validate_stable_tag() {
@@ -73,13 +126,18 @@ release_resolve_main_head() {
     git -C "$repo_root" ls-remote origin refs/heads/main 2>/dev/null | awk 'NR == 1 { print $1 }' || true
 }
 
+release_current_commit() {
+  repo_root=$(release_repo_root)
+  git -C "$repo_root" rev-parse HEAD 2>/dev/null || true
+}
+
 release_artifact_dir() {
   if [ -n "${RELEASE_ARTIFACT_DIR:-}" ]; then
     printf '%s' "$RELEASE_ARTIFACT_DIR"
     return
   fi
   repo_root=$(release_repo_root)
-  version=$(release_strip_v "$(release_tag_name)")
+  version=$(release_requested_version)
   printf '%s/.release-artifacts/%s' "$repo_root" "$version"
 }
 
@@ -140,7 +198,7 @@ release_next_safe_action() {
   status=$1
   case "$status" in
     blocked)
-      printf '%s' "inspect tag, main HEAD, and version alignment before creating a new stable tag"
+      printf '%s' "inspect version alignment, commit evidence, and channel state before retrying"
       ;;
     partial)
       printf '%s' "inspect channel states and resume only the missing or failed publication"

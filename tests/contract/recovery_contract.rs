@@ -42,7 +42,8 @@ fn degraded_runtime_is_visible_in_status_screen() {
         .success()
         .stdout(contains("◆ Estado de Sentinel"))
         .stdout(contains("Degradada"))
-        .stdout(contains("Se recomienda recuperar la red"));
+        .stdout(contains("Actividad de bloqueo"))
+        .stdout(contains("Estado actualizado desde el runtime persistido"));
 }
 
 #[test]
@@ -89,7 +90,7 @@ fn startup_with_previous_degraded_state_prioritizes_recovery() {
             "runtime_addr": null,
             "snapshot_id": "snapshot-prueba",
             "last_transition_at": "2026-03-16T00:00:00Z",
-            "blocklist_version": "0.1.1-121",
+            "blocklist_version": format!("{}-121", env!("CARGO_PKG_VERSION")),
             "blocklist_domain_count": 121,
             "last_safety_check": null,
             "last_verification_result": {

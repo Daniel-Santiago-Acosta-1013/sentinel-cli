@@ -2,7 +2,7 @@ use crate::cli::{
     copy,
     logo::SENTINEL_ASCII_LOGO,
     menu_state::MenuSession,
-    navigation::{LogScope, MenuAction, MenuActionId, Route},
+    navigation::{DomainEditorMode, LogScope, MenuAction, MenuActionId, Route},
     output, spinner,
     styles::{self, StyleProfile},
 };
@@ -14,6 +14,11 @@ pub fn render(
 ) -> String {
     match session.route {
         Route::Home => render_home(session, terminal_width, profile),
+        Route::Settings => render_settings(session, terminal_width, profile),
+        Route::BlockedDomains => render_blocked_domains(session, terminal_width, profile),
+        Route::BlockedDomainEditor(mode) => {
+            render_blocked_domain_editor(session, terminal_width, profile, mode)
+        }
         Route::Safety => render_detail(session, terminal_width, profile),
         Route::Status => render_detail(session, terminal_width, profile),
         Route::Logs(_) => render_logs(session, terminal_width, profile),
@@ -35,20 +40,12 @@ fn render_home(
         styles::muted(&copy::app_subtitle(), profile),
         String::new(),
         styles::section_title("Inicio", profile),
-        styles::inline_badges(&[
-            styles::status_badge(
-                "Proteccion",
-                session.runtime_state.mode.label(),
-                styles::tone_for_mode(session.runtime_state.mode),
-                profile,
-            ),
-            styles::status_badge(
-                "Riesgo",
-                session.runtime_state.risk_level.label(),
-                styles::tone_for_risk(session.runtime_state.risk_level),
-                profile,
-            ),
-        ]),
+        styles::inline_badges(&[styles::status_badge(
+            "Proteccion",
+            session.runtime_state.mode.label(),
+            styles::tone_for_mode(session.runtime_state.mode),
+            profile,
+        )]),
         String::new(),
         styles::muted(&session.last_message, profile),
         String::new(),
@@ -59,6 +56,67 @@ fn render_home(
     lines.push(String::new());
     lines.push(styles::muted(copy::footer_hint(session.route), profile));
     lines.join("\n")
+}
+
+fn render_settings(
+    session: &MenuSession,
+    terminal_width: usize,
+    profile: StyleProfile,
+) -> String {
+    let body = output::render_settings_summary(
+        session.blocked_domains.len(),
+        terminal_width,
+        profile,
+    );
+    render_standard_view(
+        session,
+        profile,
+        body,
+        copy::intro_text(session.route, session.runtime_state.mode),
+    )
+}
+
+fn render_blocked_domains(
+    session: &MenuSession,
+    terminal_width: usize,
+    profile: StyleProfile,
+) -> String {
+    let body = output::render_blocked_domains_table(
+        &session.blocked_domains,
+        session.selected_domain_index,
+        terminal_width,
+        profile,
+    );
+    render_standard_view(
+        session,
+        profile,
+        body,
+        copy::intro_text(session.route, session.runtime_state.mode),
+    )
+}
+
+fn render_blocked_domain_editor(
+    session: &MenuSession,
+    terminal_width: usize,
+    profile: StyleProfile,
+    mode: DomainEditorMode,
+) -> String {
+    [
+        styles::section_title(copy::route_title(session.route), profile),
+        copy::intro_text(session.route, session.runtime_state.mode).to_owned(),
+        String::new(),
+        output::render_domain_editor(
+            &session.domain_input,
+            copy::blocked_domain_editor_hint(mode, session.domain_original.as_deref()),
+            terminal_width,
+            profile,
+        ),
+        String::new(),
+        styles::muted(&session.last_message, profile),
+        String::new(),
+        styles::muted(copy::footer_hint(session.route), profile),
+    ]
+    .join("\n")
 }
 
 fn render_detail(
@@ -77,6 +135,7 @@ fn render_detail(
         Route::Status => output::render_status_table(
             &session.runtime_state,
             &session.install_state,
+            &session.block_activity,
             terminal_width,
             compact,
             profile,
