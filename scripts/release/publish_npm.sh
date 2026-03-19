@@ -8,6 +8,7 @@ set -eu
 
 repo_root=$(release_repo_root)
 template_dir="$repo_root/packaging/npm"
+npm_docs_dir="$repo_root/docs/npm"
 stage_dir="$ARTIFACT_DIR/npm-package"
 package_name=$(release_parse_template_value "$template_dir/package.json" "name")
 existing_status=$(release_read_state_value "npm" STATUS)
@@ -25,7 +26,8 @@ fi
 
 rm -rf "$stage_dir"
 mkdir -p "$stage_dir/bin"
-cp "$template_dir/README.md" "$stage_dir/README.md"
+cp "$npm_docs_dir/README.md" "$stage_dir/README.md"
+cp "$repo_root/LICENSE" "$stage_dir/LICENSE"
 cp "$template_dir/.npmignore" "$stage_dir/.npmignore"
 sed "s/__VERSION__/$RELEASE_VERSION/g" "$template_dir/package.json" > "$stage_dir/package.json"
 tar -xzf "$CANONICAL_ARCHIVE" -C "$stage_dir/bin"

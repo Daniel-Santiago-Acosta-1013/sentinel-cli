@@ -3,6 +3,9 @@ name = "sentinel"
 version = "0.1.0"
 edition = "2024"
 description = "System-level CLI ad blocker with safe recovery workflows"
+license = "Apache-2.0"
+repository = "https://github.com/Daniel-Santiago-Acosta-1013/sentinel-cli"
+homepage = "https://github.com/Daniel-Santiago-Acosta-1013/sentinel-cli"
 
 [dependencies]
 chrono = { version = "0.4", features = ["clock", "serde"] }

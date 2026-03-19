@@ -190,6 +190,5 @@ antes de publicar.
 
 ## Licencia
 
-Actualmente el repositorio declara el paquete npm de distribución como
-`UNLICENSED`. Si este proyecto va a distribuirse públicamente, conviene definir
-una licencia explícita para el repositorio completo.
+Este proyecto se distribuye bajo la licencia Apache 2.0. Consulta
+[LICENSE](/Users/santiagoacosta/Documents/personal-projects/sentinel-cli/LICENSE).
