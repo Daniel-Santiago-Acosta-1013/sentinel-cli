@@ -58,11 +58,6 @@ if npm view "$package_name@$RELEASE_VERSION" version >/dev/null 2>&1; then
   exit 0
 fi
 
-# Trusted Publishing must not fall back to a stale auth token or generated .npmrc.
-unset NODE_AUTH_TOKEN
-unset NPM_CONFIG_USERCONFIG
-unset npm_config_userconfig
-
 (cd "$stage_dir" && npm publish --provenance --access public)
 release_output "STATUS" "published"
 release_output "CHANNEL" "npm"
