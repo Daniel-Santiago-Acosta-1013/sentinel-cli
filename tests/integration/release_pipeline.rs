@@ -11,7 +11,7 @@ fn authorized_release_builds_and_materializes_all_channels_in_mock_mode() {
     let artifact_dir = release_tempdir();
 
     let authorize_output = release_command("authorize_release.sh")
-        .env("RELEASE_TAG", "v0.1.0")
+        .env("RELEASE_TAG", "v0.1.1")
         .env("RELEASE_TAG_COMMIT", "abc123")
         .env("RELEASE_MAIN_HEAD", "abc123")
         .assert()
@@ -26,7 +26,7 @@ fn authorized_release_builds_and_materializes_all_channels_in_mock_mode() {
     );
 
     let build_output = release_command("build_release_artifacts.sh")
-        .env("RELEASE_TAG", "v0.1.0")
+        .env("RELEASE_TAG", "v0.1.1")
         .env("RELEASE_TAG_COMMIT", "abc123")
         .env("RELEASE_ARTIFACT_DIR", artifact_dir.path())
         .env("RELEASE_USE_MOCK_BUILD", "1")
@@ -75,9 +75,9 @@ fn authorized_release_builds_and_materializes_all_channels_in_mock_mode() {
     let github_state = read_channel_state(state_dir.path(), "github-release");
     let npm_state = read_channel_state(state_dir.path(), "npm");
     let homebrew_state = read_channel_state(state_dir.path(), "homebrew");
-    assert_eq!(github_state.get("VERSION"), Some(&"0.1.0".to_string()));
-    assert_eq!(npm_state.get("VERSION"), Some(&"0.1.0".to_string()));
-    assert_eq!(homebrew_state.get("VERSION"), Some(&"0.1.0".to_string()));
+    assert_eq!(github_state.get("VERSION"), Some(&"0.1.1".to_string()));
+    assert_eq!(npm_state.get("VERSION"), Some(&"0.1.1".to_string()));
+    assert_eq!(homebrew_state.get("VERSION"), Some(&"0.1.1".to_string()));
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn partial_release_is_reported_when_homebrew_fails_after_npm() {
     let artifact_dir = release_tempdir();
 
     let build_output = release_command("build_release_artifacts.sh")
-        .env("RELEASE_TAG", "v0.1.0")
+        .env("RELEASE_TAG", "v0.1.1")
         .env("RELEASE_TAG_COMMIT", "abc123")
         .env("RELEASE_ARTIFACT_DIR", artifact_dir.path())
         .env("RELEASE_USE_MOCK_BUILD", "1")
@@ -122,10 +122,10 @@ fn partial_release_is_reported_when_homebrew_fails_after_npm() {
         .stderr(contains("simulated Homebrew publication failure"));
 
     release_command("summarize_release.sh")
-        .env("RELEASE_TAG", "v0.1.0")
+        .env("RELEASE_TAG", "v0.1.1")
         .env("RELEASE_TAG_COMMIT", "abc123")
         .env("RELEASE_MAIN_HEAD", "abc123")
-        .env("RELEASE_VERSION", "0.1.0")
+        .env("RELEASE_VERSION", "0.1.1")
         .env("RELEASE_STATE_DIR", state_dir.path())
         .assert()
         .success()
@@ -139,7 +139,7 @@ fn retry_detects_materialized_release_without_republishing() {
     let artifact_dir = release_tempdir();
 
     let build_output = release_command("build_release_artifacts.sh")
-        .env("RELEASE_TAG", "v0.1.0")
+        .env("RELEASE_TAG", "v0.1.1")
         .env("RELEASE_TAG_COMMIT", "abc123")
         .env("RELEASE_ARTIFACT_DIR", artifact_dir.path())
         .env("RELEASE_USE_MOCK_BUILD", "1")

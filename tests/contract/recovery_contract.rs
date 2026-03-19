@@ -89,7 +89,7 @@ fn startup_with_previous_degraded_state_prioritizes_recovery() {
             "runtime_addr": null,
             "snapshot_id": "snapshot-prueba",
             "last_transition_at": "2026-03-16T00:00:00Z",
-            "blocklist_version": "0.1.0-121",
+            "blocklist_version": "0.1.1-121",
             "blocklist_domain_count": 121,
             "last_safety_check": null,
             "last_verification_result": {

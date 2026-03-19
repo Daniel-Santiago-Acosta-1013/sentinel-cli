@@ -8,7 +8,7 @@ use crate::support::release_fixtures::{
 #[test]
 fn authorize_release_requires_main_head_equality() {
     let output = release_command("authorize_release.sh")
-        .env("RELEASE_TAG", "v0.1.0")
+        .env("RELEASE_TAG", "v0.1.1")
         .env("RELEASE_TAG_COMMIT", "old-main-commit")
         .env("RELEASE_MAIN_HEAD", "current-main-head")
         .assert()
@@ -28,7 +28,7 @@ fn authorize_release_requires_main_head_equality() {
 #[test]
 fn authorize_release_requires_stable_semver_tags() {
     let output = release_command("authorize_release.sh")
-        .env("RELEASE_TAG", "v0.1.0-rc.1")
+        .env("RELEASE_TAG", "v0.1.1-rc.1")
         .env("RELEASE_TAG_COMMIT", "main-head")
         .env("RELEASE_MAIN_HEAD", "main-head")
         .assert()
@@ -59,7 +59,7 @@ fn authorize_release_requires_tag_and_project_version_match() {
     assert_eq!(values.get("VERSION_MATCH").map(String::as_str), Some("false"));
     assert_eq!(
         values.get("PROJECT_VERSION").map(String::as_str),
-        Some("0.1.0")
+        Some("0.1.1")
     );
     assert_eq!(values.get("TAG_VERSION").map(String::as_str), Some("9.9.9"));
 }
@@ -70,17 +70,17 @@ fn inspect_release_state_reports_materialized_when_all_channels_exist() {
     write_channel_state(
         state_dir.path(),
         "github-release",
-        &[("STATUS", "materialized"), ("VERSION", "0.1.0")],
+        &[("STATUS", "materialized"), ("VERSION", "0.1.1")],
     );
     write_channel_state(
         state_dir.path(),
         "npm",
-        &[("STATUS", "materialized"), ("VERSION", "0.1.0")],
+        &[("STATUS", "materialized"), ("VERSION", "0.1.1")],
     );
     write_channel_state(
         state_dir.path(),
         "homebrew",
-        &[("STATUS", "materialized"), ("VERSION", "0.1.0")],
+        &[("STATUS", "materialized"), ("VERSION", "0.1.1")],
     );
 
     let output = release_command("inspect_release_state.sh")
@@ -107,7 +107,7 @@ fn publish_npm_blocks_incompatible_existing_state() {
     std::fs::write(
         artifact_dir.path().join("release-manifest.env"),
         format!(
-            "RELEASE_TAG=v0.1.0\nRELEASE_VERSION=0.1.0\nSOURCE_COMMIT=abc123\nARTIFACT_DIR={}\nCANONICAL_ARCHIVE=/tmp/archive.tar.gz\nCANONICAL_ARCHIVE_SHA256=deadbeef\n",
+            "RELEASE_TAG=v0.1.1\nRELEASE_VERSION=0.1.1\nSOURCE_COMMIT=abc123\nARTIFACT_DIR={}\nCANONICAL_ARCHIVE=/tmp/archive.tar.gz\nCANONICAL_ARCHIVE_SHA256=deadbeef\n",
             artifact_dir.path().display()
         ),
     )
@@ -118,7 +118,7 @@ fn publish_npm_blocks_incompatible_existing_state() {
         "npm",
         &[
             ("STATUS", "incompatible"),
-            ("VERSION", "0.1.0"),
+            ("VERSION", "0.1.1"),
             ("DETAILS", "existing package differs from authorized release"),
         ],
     );
@@ -142,31 +142,31 @@ fn summarize_release_includes_required_audit_fields() {
         "github-release",
         &[
             ("STATUS", "materialized"),
-            ("VERSION", "0.1.0"),
+            ("VERSION", "0.1.1"),
             ("COMMIT", "abc123"),
         ],
     );
     write_channel_state(
         state_dir.path(),
         "npm",
-        &[("STATUS", "materialized"), ("VERSION", "0.1.0")],
+        &[("STATUS", "materialized"), ("VERSION", "0.1.1")],
     );
     write_channel_state(
         state_dir.path(),
         "homebrew",
-        &[("STATUS", "materialized"), ("VERSION", "0.1.0")],
+        &[("STATUS", "materialized"), ("VERSION", "0.1.1")],
     );
 
     release_command("summarize_release.sh")
-        .env("RELEASE_TAG", "v0.1.0")
+        .env("RELEASE_TAG", "v0.1.1")
         .env("RELEASE_TAG_COMMIT", "abc123")
         .env("RELEASE_MAIN_HEAD", "abc123")
-        .env("RELEASE_VERSION", "0.1.0")
+        .env("RELEASE_VERSION", "0.1.1")
         .env("RELEASE_STATE_DIR", state_dir.path())
         .assert()
         .success()
         .stdout(contains("GLOBAL_STATUS=completed"))
         .stdout(contains("AUTHORIZED_COMMIT=abc123"))
-        .stdout(contains("TAG=v0.1.0"))
+        .stdout(contains("TAG=v0.1.1"))
         .stdout(contains("NEXT_SAFE_ACTION="));
 }

@@ -63,7 +63,7 @@ pub fn create_mock_binary(dir: &Path) -> PathBuf {
     let path = dir.join("sentinel");
     fs::write(
         &path,
-        "#!/bin/sh\nif [ \"${SENTINEL_INTERNAL_MODE:-}\" = \"print-version\" ]; then\n  echo 0.1.0\n  exit 0\nfi\necho sentinel\n",
+        "#!/bin/sh\nif [ \"${SENTINEL_INTERNAL_MODE:-}\" = \"print-version\" ]; then\n  echo 0.1.1\n  exit 0\nfi\necho sentinel\n",
     )
     .expect("write mock sentinel");
     #[cfg(unix)]

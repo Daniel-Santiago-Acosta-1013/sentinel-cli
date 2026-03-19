@@ -125,7 +125,7 @@ mod tests {
         let bundle = BlocklistBundle::load_from_path(&blocklist_path).expect("load mirror");
 
         assert_eq!(bundle.domain_count, 121);
-        assert_eq!(bundle.version, "0.1.0-121");
+        assert_eq!(bundle.version, "0.1.1-121");
         assert_eq!(bundle.source_label, "mirrored-local-blocklist");
         assert!(bundle.matches("pixel.rubiconproject.com"));
         assert!(bundle.matches("subdomain.zemanta.com"));
