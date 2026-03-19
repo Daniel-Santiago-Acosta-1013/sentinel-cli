@@ -37,6 +37,7 @@ pub type AppResult<T> = Result<T>;
 pub struct AppPaths {
     pub state_dir: PathBuf,
     pub snapshots_dir: PathBuf,
+    pub blocklist_file: PathBuf,
     pub config_file: PathBuf,
     pub state_file: PathBuf,
     pub events_file: PathBuf,
@@ -69,6 +70,7 @@ impl AppPaths {
         Ok(Self {
             state_dir: state_dir.clone(),
             snapshots_dir,
+            blocklist_file: root_dir.join("blocklist.txt"),
             config_file: config_dir.join("config.toml"),
             state_file: state_dir.join("state.json"),
             events_file: state_dir.join("events.jsonl"),
@@ -139,7 +141,8 @@ pub struct SentinelApp {
 
 impl SentinelApp {
     pub fn new(paths: AppPaths) -> AppResult<Self> {
-        let blocklist = BlocklistBundle::load()?;
+        BlocklistBundle::sync_mirror(&paths.blocklist_file)?;
+        let blocklist = BlocklistBundle::load_from_path(&paths.blocklist_file)?;
         Ok(Self {
             config_store: ConfigStore::new(paths.clone()),
             state_store: StateStore::new(paths.clone()),
@@ -293,8 +296,7 @@ impl SentinelApp {
         session.route = Route::Exit;
         session.selected_index = 0;
         session.last_result = None;
-        session.last_message =
-            "Sesion cerrada sin acumular texto ni dejar cambios pendientes.".to_owned();
+        session.last_message.clear();
         Ok(true)
     }
 

@@ -258,11 +258,10 @@ fn render_result(
 }
 
 fn render_exit(session: &MenuSession, profile: StyleProfile) -> String {
+    let _ = session;
     [
-        styles::section_title("Salida", profile),
+        styles::title(SENTINEL_ASCII_LOGO, profile),
         styles::muted("Sentinel cerro la sesion interactiva.", profile),
-        String::new(),
-        session.last_message.clone(),
     ]
     .join("\n")
 }

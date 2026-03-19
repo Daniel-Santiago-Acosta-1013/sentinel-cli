@@ -20,7 +20,8 @@ pub async fn run_runtime(paths: AppPaths) -> Result<()> {
     let upstream: SocketAddr = config.upstream_dns.parse().into_diagnostic()?;
     let bind_addr = paths.runtime_addr()?;
     let socket = UdpSocket::bind(bind_addr).await.into_diagnostic()?;
-    let blocklist = BlocklistBundle::load()?;
+    BlocklistBundle::sync_mirror(&paths.blocklist_file)?;
+    let blocklist = BlocklistBundle::load_from_path(&paths.blocklist_file)?;
     info!("runtime listening on {bind_addr}");
 
     let mut buffer = [0u8; 4096];

@@ -37,11 +37,17 @@ impl<'a> SafetyController<'a> {
         let addr = self.paths.runtime_addr()?;
         let simulated_busy =
             std::env::var("SENTINEL_SIMULATE_BUSY_PORT").ok().as_deref() == Some("1");
+        let simulated_reclaimable = std::env::var("SENTINEL_SIMULATE_RECLAIMABLE_PORT")
+            .ok()
+            .as_deref()
+            == Some("1");
         let runtime_conflict = simulated_busy
             || (!manager.is_fake_mode()
                 && !runtime::port_available(addr)
                 && !state.runtime_pid.is_some_and(runtime::process_alive));
-        let runtime_reclaimed = if runtime_conflict {
+        let runtime_reclaimed = if simulated_busy {
+            simulated_reclaimable
+        } else if runtime_conflict {
             runtime::reclaim_sentinel_port(addr, state.runtime_pid)?
         } else {
             false
